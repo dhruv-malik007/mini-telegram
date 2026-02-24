@@ -1,0 +1,13 @@
+# Deploy from GitHub to Render: https://render.com
+# After connecting your repo, Render will use this. Set JWT_SECRET in the dashboard.
+services:
+  - type: web
+    name: mini-telegram
+    runtime: node
+    buildCommand: npm install && cd client && npm install && npm run build && cd ..
+    startCommand: npm run server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true

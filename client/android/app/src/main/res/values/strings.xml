@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Mini Telegram</string>
+    <string name="title_activity_main">Mini Telegram</string>
+    <string name="package_name">com.minitelegram.app</string>
+    <string name="custom_url_scheme">com.minitelegram.app</string>
+</resources>
