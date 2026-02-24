@@ -184,6 +184,11 @@ app.post('/api/admin/users/:id/admin', ...adminMiddleware, (req, res) => {
 // --- Socket.io: real-time messaging (auth via token) ---
 const onlineByUserId = new Map();
 
+function broadcastOnlineUsers() {
+  const userIds = Array.from(onlineByUserId.keys());
+  io.emit('online_users', userIds);
+}
+
 io.on('connection', (socket) => {
   socket.on('join', (token) => {
     const userId = token ? verifyToken(token) : null;
@@ -191,6 +196,16 @@ io.on('connection', (socket) => {
     socket.userId = userId;
     if (!onlineByUserId.has(userId)) onlineByUserId.set(userId, new Set());
     onlineByUserId.get(userId).add(socket.id);
+    broadcastOnlineUsers();
+  });
+
+  socket.on('typing', (payload) => {
+    const recipientId = payload && typeof payload.recipientId === 'number' ? payload.recipientId : null;
+    if (!socket.userId || !recipientId) return;
+    const recipientSockets = onlineByUserId.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach((sid) => io.to(sid).emit('user_typing', { userId: socket.userId }));
+    }
   });
 
   socket.on('send_message', (payload) => {
@@ -219,6 +234,7 @@ io.on('connection', (socket) => {
       if (onlineByUserId.get(socket.userId).size === 0) {
         onlineByUserId.delete(socket.userId);
       }
+      broadcastOnlineUsers();
     }
   });
 });

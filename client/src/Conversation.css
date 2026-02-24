@@ -39,6 +39,36 @@
   color: var(--text-muted);
 }
 
+.conversation-online {
+  color: #2ecc71;
+}
+
+.conversation-typing {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.conversation-typing-dots {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: typing-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes typing-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.conversation-typing-text {
+  font-style: italic;
+}
+
 .conversation-header-actions {
   display: flex;
   gap: 0.5rem;

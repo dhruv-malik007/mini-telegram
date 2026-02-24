@@ -18,6 +18,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
 
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_KEY);
@@ -40,6 +41,7 @@ function App() {
     const socketUrl = getSocketUrl();
     const s = socketUrl ? io(socketUrl, { path: '/socket.io', transports: ['websocket', 'polling'] }) : io({ path: '/socket.io', transports: ['websocket', 'polling'] });
     s.on('connect', () => s.emit('join', auth.token));
+    s.on('online_users', (ids) => setOnlineUserIds(new Set(Array.isArray(ids) ? ids : [])));
     setSocket(s);
     return () => s.disconnect();
   }, [auth?.token]);
@@ -144,6 +146,7 @@ function App() {
           currentUser={user}
           users={users}
           selectedUserId={selectedUserId}
+          onlineUserIds={onlineUserIds}
           onSelect={(id) => { setShowAdmin(false); loadConversation(id); }}
         />
       </aside>
@@ -159,6 +162,7 @@ function App() {
             currentUser={user}
             otherUser={otherUser}
             messages={messages}
+            onlineUserIds={onlineUserIds}
             onNewMessage={handleNewMessage}
             onSendMessage={handleSendMessage}
             onDeleteChat={handleDeleteChat}

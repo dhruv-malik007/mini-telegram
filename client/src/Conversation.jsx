@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import './Conversation.css';
 
 export default function Conversation({
   currentUser,
   otherUser,
   messages,
+  onlineUserIds,
   onNewMessage,
   onSendMessage,
   onDeleteChat,
@@ -12,7 +13,10 @@ export default function Conversation({
   socket,
 }) {
   const [input, setInput] = useState('');
+  const [otherTyping, setOtherTyping] = useState(false);
   const listRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const emitTypingRef = useRef(null);
 
   useEffect(() => {
     if (!socket || !otherUser) return;
@@ -27,8 +31,44 @@ export default function Conversation({
   }, [socket, currentUser?.id, otherUser?.id, onNewMessage]);
 
   useEffect(() => {
+    if (!socket || !otherUser) return;
+    const handler = ({ userId }) => {
+      if (userId !== otherUser.id) return;
+      setOtherTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setOtherTyping(false);
+        typingTimeoutRef.current = null;
+      }, 3000);
+    };
+    socket.on('user_typing', handler);
+    return () => {
+      socket.off('user_typing', handler);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [socket, otherUser?.id]);
+
+  const emitTyping = useCallback(() => {
+    if (!socket || !otherUser) return;
+    if (emitTypingRef.current) return;
+    socket.emit('typing', { recipientId: otherUser.id });
+    emitTypingRef.current = setTimeout(() => { emitTypingRef.current = null; }, 1000);
+  }, [socket, otherUser?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (emitTypingRef.current) clearTimeout(emitTypingRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages]);
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
+    emitTyping();
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -48,7 +88,10 @@ export default function Conversation({
         </span>
         <div className="conversation-header-info">
           <span className="conversation-name">{otherUser.display_name || otherUser.username}</span>
-          <span className="conversation-username">@{otherUser.username}</span>
+          <span className="conversation-username">
+            @{otherUser.username}
+            {onlineUserIds && onlineUserIds.has(otherUser.id) && <span className="conversation-online"> · Online</span>}
+          </span>
         </div>
         <div className="conversation-header-actions">
           {onDeleteChat && (
@@ -65,6 +108,12 @@ export default function Conversation({
       </header>
 
       <div className="conversation-messages" ref={listRef}>
+        {otherTyping && (
+          <div className="conversation-typing">
+            <span className="conversation-typing-dots" />
+            <span className="conversation-typing-text">{(otherUser.display_name || otherUser.username)} is typing...</span>
+          </div>
+        )}
         {messages.map((msg) => {
           const isOutgoing = msg.sender_id === currentUser.id;
           return (
@@ -91,7 +140,7 @@ export default function Conversation({
           type="text"
           placeholder="Type a message..."
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange}
           className="conversation-input"
           maxLength={10000}
         />
