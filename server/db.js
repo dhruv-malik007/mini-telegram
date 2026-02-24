@@ -1,7 +1,12 @@
 const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, '..', 'data', 'app.db'));
+const dataDir = path.join(__dirname, '..', 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+const db = new Database(path.join(dataDir, 'app.db'));
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -26,11 +31,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 `);
 
-// Migration: add password_hash if missing (existing DBs)
+// Migrations for existing DBs
 try {
-  const cols = db.prepare("PRAGMA table_info(users)").all();
+  let cols = db.prepare("PRAGMA table_info(users)").all();
   if (!cols.some((c) => c.name === 'password_hash')) {
     db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+  }
+  cols = db.prepare("PRAGMA table_info(users)").all();
+  if (!cols.some((c) => c.name === 'is_admin')) {
+    db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0');
   }
 } catch (_) {}
 

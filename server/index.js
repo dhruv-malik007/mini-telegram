@@ -6,7 +6,7 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const db = require('./db');
-const { signToken, verifyToken, authMiddleware } = require('./auth');
+const { signToken, verifyToken, authMiddleware, requireAdmin } = require('./auth');
 
 const app = express();
 const httpServer = createServer(app);
@@ -38,9 +38,10 @@ app.post('/api/register', async (req, res) => {
   const uname = username.trim().slice(0, 64);
   try {
     const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
-    const stmt = db.prepare('INSERT INTO users (username, display_name, password_hash) VALUES (?, ?, ?)');
-    const result = stmt.run(uname, name || uname, password_hash);
-    const user = db.prepare('SELECT id, username, display_name FROM users WHERE id = ?').get(result.lastInsertRowid);
+    const stmt = db.prepare('INSERT INTO users (username, display_name, password_hash, is_admin) VALUES (?, ?, ?, ?)');
+    const result = stmt.run(uname, name || uname, password_hash, 0);
+    const row = db.prepare('SELECT id, username, display_name, is_admin FROM users WHERE id = ?').get(result.lastInsertRowid);
+    const user = { id: row.id, username: row.username, display_name: row.display_name, is_admin: !!row.is_admin };
     const token = signToken(user.id);
     res.status(201).json({ user, token });
   } catch (e) {
@@ -57,7 +58,7 @@ app.post('/api/login', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password required' });
   }
-  const row = db.prepare('SELECT id, username, display_name, password_hash FROM users WHERE username = ?').get(username.trim());
+  const row = db.prepare('SELECT id, username, display_name, password_hash, is_admin FROM users WHERE username = ?').get(username.trim());
   if (!row || !row.password_hash) {
     return res.status(401).json({ error: 'invalid username or password' });
   }
@@ -65,9 +66,20 @@ app.post('/api/login', async (req, res) => {
   if (!ok) {
     return res.status(401).json({ error: 'invalid username or password' });
   }
-  const user = { id: row.id, username: row.username, display_name: row.display_name };
+  const user = { id: row.id, username: row.username, display_name: row.display_name, is_admin: !!(row.is_admin) };
   const token = signToken(user.id);
   res.json({ user, token });
+});
+
+// Current user (for refresh / is_admin)
+app.get('/api/me', authMiddleware, (req, res) => {
+  try {
+    const row = db.prepare('SELECT id, username, display_name, is_admin FROM users WHERE id = ?').get(req.userId);
+    if (!row) return res.status(404).json({ error: 'User not found' });
+    res.json({ id: row.id, username: row.username, display_name: row.display_name, is_admin: !!row.is_admin });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Protected routes
@@ -94,6 +106,76 @@ app.get('/api/conversation/:otherId', authMiddleware, (req, res) => {
       ORDER BY created_at ASC
     `).all(userId, otherId, otherId, userId);
     res.json(messages);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete own conversation with another user (all messages between the two)
+app.delete('/api/conversation/:otherId', authMiddleware, (req, res) => {
+  const userId = req.userId;
+  const otherId = parseInt(req.params.otherId, 10);
+  if (isNaN(otherId)) return res.status(400).json({ error: 'invalid user id' });
+  try {
+    db.prepare(`
+      DELETE FROM messages
+      WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+    `).run(userId, otherId, otherId, userId);
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Admin routes
+const adminMiddleware = [authMiddleware, requireAdmin(db)];
+
+app.get('/api/admin/users', ...adminMiddleware, (req, res) => {
+  try {
+    const users = db.prepare('SELECT id, username, display_name, is_admin FROM users ORDER BY username').all();
+    res.json(users.map((r) => ({ ...r, is_admin: !!r.is_admin })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: delete any conversation (between userId and otherId)
+app.delete('/api/admin/conversation', ...adminMiddleware, (req, res) => {
+  const userId = parseInt(req.query.userId, 10);
+  const otherId = parseInt(req.query.otherId, 10);
+  if (isNaN(userId) || isNaN(otherId)) return res.status(400).json({ error: 'invalid user ids' });
+  try {
+    db.prepare(`
+      DELETE FROM messages
+      WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+    `).run(userId, otherId, otherId, userId);
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: delete a user and all their messages
+app.delete('/api/admin/users/:id', ...adminMiddleware, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'invalid user id' });
+  if (id === req.userId) return res.status(400).json({ error: 'cannot delete yourself' });
+  try {
+    db.prepare('DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?').run(id, id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: set user as admin
+app.post('/api/admin/users/:id/admin', ...adminMiddleware, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'invalid user id' });
+  try {
+    db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(id);
+    res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -141,6 +223,17 @@ io.on('connection', (socket) => {
   });
 });
 
+// Seed default admin account if missing (username: admin, password: admin112233)
+const ADMIN_USERNAME = 'admin';
+const ADMIN_PASSWORD = 'admin112233';
+async function ensureAdminUser() {
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USERNAME);
+  if (existing) return;
+  const password_hash = await bcrypt.hash(ADMIN_PASSWORD, SALT_ROUNDS);
+  db.prepare('INSERT INTO users (username, display_name, password_hash, is_admin) VALUES (?, ?, ?, ?)').run(ADMIN_USERNAME, 'Admin', password_hash, 1);
+  console.log('Default admin account created: username=%s', ADMIN_USERNAME);
+}
+
 // Serve built frontend (so one server works for app + API)
 if (hasClientBuild) {
   app.use(express.static(clientDist));
@@ -156,9 +249,14 @@ if (hasClientBuild) {
   });
 }
 
-httpServer.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  if (!hasClientBuild) {
-    console.log('No client build found. Run "cd client && npm run build" to serve the app from this server.');
-  }
+ensureAdminUser().then(() => {
+  httpServer.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+    if (!hasClientBuild) {
+      console.log('No client build found. Run "cd client && npm run build" to serve the app from this server.');
+    }
+  });
+}).catch((err) => {
+  console.error('Failed to ensure admin user:', err);
+  process.exit(1);
 });

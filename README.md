@@ -10,6 +10,8 @@ A small-scale messaging app similar to Telegram: real-time 1-on-1 chat, user lis
 - **Open a conversation** and send messages
 - **Real-time delivery** via WebSockets (Socket.io)
 - **Message history** stored in SQLite; sessions secured with JWT (7-day expiry)
+- **Delete chat** — remove all messages in a conversation (for both participants)
+- **Admin** — a default admin account is created on first run (username: `admin`, password: `admin112233`); admins can delete any conversation, delete users, and promote others to admin
 
 ## Tech stack
 
@@ -139,68 +141,6 @@ Build and serve the web app from the same server: `cd client && npm run build` (
 
 ## Project layout
 
-1. **Set `JWT_SECRET`** to a long random string (e.g. `openssl rand -hex 32`). Never use the default in production.
-2. **Use HTTPS** so passwords and tokens are encrypted. Android requires HTTPS for production; HTTP is blocked by default.
-3. **Persist `data/`** so the SQLite file (users and messages) is kept across restarts.
-4. **Run the server** (Node 18+). Example:
-
-```bash
-export JWT_SECRET="your-long-random-secret-here"
-export PORT=3001
-npm run server
-```
-
-5. **Serve the built web app** from the same server (the server already serves `client/dist` if you run `cd client && npm run build` first). So one deployed URL serves both the API and the web UI.
-
-**Deploy options:** Any VPS (DigitalOcean, Linode, etc.), Railway, Render, or a home server with a domain and SSL (e.g. Caddy/nginx + Let’s Encrypt).
-
----
-
-## Building the Android app
-
-The Android app is the same React app packaged with **Capacitor**. It talks to your **deployed server** via the URL you set at build time.
-
-### 1. Deploy the server
-
-Deploy the server (see above) and note its **HTTPS** URL, e.g. `https://my-mini-telegram.example.com`.
-
-### 2. Build the web app with that URL
-
-From the project root:
-
-```bash
-cd client
-export VITE_API_URL="https://my-mini-telegram.example.com"
-npm run build
-```
-
-Use your real server URL (no trailing slash). This bakes the URL into the app so it always connects to your server.
-
-### 3. Sync and open in Android Studio
-
-```bash
-npx cap sync android
-npx cap open android
-```
-
-Android Studio will open. Then:
-
-- Use **Build → Build Bundle(s) / APK(s) → Build APK(s)** to create a debug APK, or **Build → Generate Signed Bundle / APK** for a release APK to install on devices or publish.
-- Run on a device or emulator with **Run → Run 'app'**.
-
-### 4. Install on devices
-
-- **Debug:** Copy the APK from `client/android/app/build/outputs/apk/debug/` to your phone and install (enable “Install from unknown sources” if needed).
-- **Release:** Sign the APK or AAB and share it; you can also publish to the Play Store.
-
-### Notes
-
-- **HTTPS required:** Android blocks plain HTTP to arbitrary hosts. Your server must use HTTPS in production.
-- **Same server for everyone:** All users (web and Android) use the same server URL. They sign up / log in with username and password and see the same chats.
-- **Rebuild if URL changes:** If you change the server URL, set `VITE_API_URL` again, run `npm run build`, then `npx cap sync android` and rebuild the APK.
-
-## Project layout
-
 ```
 mini-telegram/
 ├── client/              # React frontend (Vite) + Capacitor Android
@@ -219,6 +159,7 @@ mini-telegram/
 ├── data/
 │   └── app.db           # SQLite DB (created on first run)
 ├── package.json
+├── render.yaml          # Deploy from GitHub to Render
 └── README.md
 ```
 
