@@ -151,8 +151,8 @@ export default function Conversation({
           className="conversation-input"
           maxLength={10000}
         />
-        <button type="submit" className="conversation-send" disabled={!input.trim()}>
-          Send
+        <button type="submit" className="conversation-send" disabled={!input.trim()} aria-label="Send">
+          <span className="conversation-send-icon">↑</span>
         </button>
       </form>
     </div>

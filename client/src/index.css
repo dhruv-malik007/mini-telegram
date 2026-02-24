@@ -11,6 +11,9 @@
   --incoming: #2a2a35;
   --radius: 12px;
   --radius-sm: 8px;
+  --chat-bg: #0d0d10;
+  --bubble-outgoing: #6c5ce7;
+  --bubble-incoming: #252530;
 }
 
 * {
