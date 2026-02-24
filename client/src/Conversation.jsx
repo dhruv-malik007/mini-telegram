@@ -6,6 +6,7 @@ export default function Conversation({
   otherUser,
   messages,
   onlineUserIds,
+  onBack,
   onNewMessage,
   onSendMessage,
   onDeleteChat,
@@ -83,6 +84,11 @@ export default function Conversation({
   return (
     <>
       <header className="conversation-header">
+        {onBack && (
+          <button type="button" className="conversation-back" onClick={onBack} aria-label="Back to chats">
+            <span className="conversation-back-icon" aria-hidden>←</span>
+          </button>
+        )}
         <span className="conversation-avatar">
           {(otherUser.display_name || otherUser.username).charAt(0).toUpperCase()}
         </span>

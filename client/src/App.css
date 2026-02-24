@@ -1,6 +1,8 @@
 .app {
   display: flex;
+  flex: 1;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .app--loading {
@@ -95,4 +97,50 @@
   justify-content: center;
   color: var(--text-muted);
   font-size: 1rem;
+}
+
+/* Mobile: single-pane layout — show list or conversation (or admin), not both */
+@media (max-width: 768px) {
+  .app {
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .app .sidebar {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .app .main {
+    display: none;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .app.app--main-open .sidebar {
+    display: none;
+  }
+
+  .app.app--main-open .main {
+    display: flex;
+    width: 100%;
+  }
+
+  .sidebar-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .logo {
+    font-size: 1rem;
+  }
+
+  .btn-admin,
+  .btn-logout {
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+  }
 }

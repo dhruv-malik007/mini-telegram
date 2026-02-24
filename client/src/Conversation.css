@@ -7,6 +7,73 @@
   background: var(--bg-panel);
 }
 
+.conversation-back {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: -0.25rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.conversation-back:hover {
+  background: var(--bg-input);
+}
+
+.conversation-back-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+@media (max-width: 768px) {
+  .conversation-back {
+    display: flex;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .conversation-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .conversation-header-actions {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .btn-delete-chat {
+    min-height: 44px;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .conversation-form {
+    padding: 0.75rem 1rem;
+  }
+
+  .conversation-input {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+
+  .conversation-send {
+    min-height: 44px;
+    min-width: 52px;
+  }
+
+  .conversation-messages {
+    padding: 0.75rem 1rem;
+  }
+
+  .message-bubble {
+    max-width: 88%;
+  }
+}
+
 .conversation-avatar {
   width: 40px;
   height: 40px;

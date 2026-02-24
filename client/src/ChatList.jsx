@@ -1,16 +1,40 @@
+import { useState, useMemo } from 'react';
 import './ChatList.css';
 
 export default function ChatList({ currentUser, users, selectedUserId, onlineUserIds, onSelect }) {
-  const others = users.filter((u) => u.id !== currentUser.id);
+  const [search, setSearch] = useState('');
+  const others = useMemo(() => users.filter((u) => u.id !== currentUser.id), [users, currentUser.id]);
   const onlineSet = onlineUserIds || new Set();
+
+  const filtered = useMemo(() => {
+    const q = (search || '').trim().toLowerCase();
+    if (!q) return others;
+    return others.filter((u) => {
+      const un = (u.username || '').toLowerCase();
+      const dn = (u.display_name || u.username || '').toLowerCase();
+      return un.includes(q) || dn.includes(q);
+    });
+  }, [others, search]);
 
   return (
     <nav className="chat-list">
+      <div className="chat-list-search-wrap">
+        <input
+          type="search"
+          placeholder="Search usernames..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="chat-list-search"
+          aria-label="Search users"
+        />
+      </div>
       <ul className="chat-list-ul">
         {others.length === 0 ? (
           <li className="chat-list-empty">No other users yet. Open another browser or incognito to add another account and chat.</li>
+        ) : filtered.length === 0 ? (
+          <li className="chat-list-empty">No users match &quot;{search.trim()}&quot;</li>
         ) : (
-          others.map((u) => (
+          filtered.map((u) => (
             <li key={u.id}>
               <button
                 type="button"

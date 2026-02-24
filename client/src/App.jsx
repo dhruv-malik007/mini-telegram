@@ -127,7 +127,7 @@ function App() {
   const otherUser = users.find((u) => u.id === selectedUserId);
 
   return (
-    <div className="app">
+    <div className={`app ${showAdmin || selectedUserId ? 'app--main-open' : ''}`}>
       <aside className="sidebar">
         <header className="sidebar-header">
           <h1 className="logo">Mini Telegram</h1>
@@ -163,6 +163,7 @@ function App() {
             otherUser={otherUser}
             messages={messages}
             onlineUserIds={onlineUserIds}
+            onBack={() => setSelectedUserId(null)}
             onNewMessage={handleNewMessage}
             onSendMessage={handleSendMessage}
             onDeleteChat={handleDeleteChat}

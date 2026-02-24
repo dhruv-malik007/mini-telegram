@@ -231,3 +231,43 @@
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
+@media (max-width: 768px) {
+  .admin-dashboard-header {
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .admin-dashboard-close {
+    align-self: flex-end;
+    min-height: 44px;
+  }
+
+  .admin-dashboard-stats {
+    padding: 1rem;
+  }
+
+  .admin-dashboard-section {
+    padding: 1rem;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    padding: 0.6rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .admin-btn {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .admin-delete-conv {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-delete-conv select {
+    min-width: 0;
+  }
+}
