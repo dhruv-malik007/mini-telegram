@@ -1,0 +1,233 @@
+.admin-dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-dark);
+  overflow: auto;
+}
+
+.admin-dashboard-loading {
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.admin-dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.admin-dashboard-title h1 {
+  margin: 0 0 0.35rem 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.admin-dashboard-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  max-width: 520px;
+  line-height: 1.4;
+}
+
+.admin-dashboard-close {
+  padding: 0.5rem 1rem;
+  background: var(--bg-input);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.admin-dashboard-close:hover {
+  background: var(--border);
+}
+
+.admin-dashboard-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 1rem 1.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+}
+
+.admin-dashboard-error-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.admin-dashboard-stats {
+  display: flex;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-stat-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  min-width: 120px;
+}
+
+.admin-stat-value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.2;
+}
+
+.admin-stat-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.admin-dashboard-section {
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.admin-dashboard-section h2 {
+  margin: 0 0 0.35rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.admin-section-desc {
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table-row-you {
+  background: rgba(108, 92, 231, 0.08);
+}
+
+.admin-table-name {
+  font-weight: 500;
+}
+
+.admin-table-you {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.admin-table-actions {
+  white-space: nowrap;
+}
+
+.admin-table-no-action {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.admin-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.admin-role-regular {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.admin-btn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  border-radius: var(--radius-sm);
+  margin-right: 0.5rem;
+}
+
+.admin-btn-promote {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+}
+
+.admin-btn-promote:hover {
+  background: var(--accent-hover);
+}
+
+.admin-btn-danger {
+  background: transparent;
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+}
+
+.admin-btn-danger:hover {
+  background: rgba(231, 76, 60, 0.2);
+}
+
+.admin-delete-conv {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-delete-conv select {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.9rem;
+  min-width: 160px;
+}
+
+.admin-delete-conv-between {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}

@@ -7,6 +7,8 @@ export default function Conversation({
   messages,
   onNewMessage,
   onSendMessage,
+  onDeleteChat,
+  onDeleteChatAsAdmin,
   socket,
 }) {
   const [input, setInput] = useState('');
@@ -47,6 +49,18 @@ export default function Conversation({
         <div className="conversation-header-info">
           <span className="conversation-name">{otherUser.display_name || otherUser.username}</span>
           <span className="conversation-username">@{otherUser.username}</span>
+        </div>
+        <div className="conversation-header-actions">
+          {onDeleteChat && (
+            <button type="button" className="btn-delete-chat" onClick={onDeleteChat} title="Delete chat">
+              Delete chat
+            </button>
+          )}
+          {onDeleteChatAsAdmin && (
+            <button type="button" className="btn-delete-chat admin" onClick={onDeleteChatAsAdmin} title="Delete conversation (admin)">
+              Delete (admin)
+            </button>
+          )}
         </div>
       </header>
 

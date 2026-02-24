@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { getUsers, login, register, getConversation } from './api';
+import { getUsers, login, register, getConversation, getMe, deleteConversation, getAdminUsers, deleteConversationAsAdmin, deleteUser, setUserAdmin } from './api';
 import { getSocketUrl } from './config';
 import Login from './Login';
 import ChatList from './ChatList';
 import Conversation from './Conversation';
+import AdminPanel from './AdminPanel';
 import './App.css';
 
 const AUTH_KEY = 'mini-telegram-auth';
@@ -16,12 +17,18 @@ function App() {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_KEY);
     if (stored) {
       try {
-        setAuth(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        setAuth(parsed);
+        // Refresh user from server (e.g. is_admin)
+        getMe().then((user) => {
+          setAuth((prev) => (prev ? { ...prev, user } : null));
+        }).catch(() => {});
       } catch (_) {}
     }
     setLoading(false);
@@ -85,6 +92,18 @@ function App() {
     socket.emit('send_message', { recipientId: selectedUserId, content });
   }, [socket, selectedUserId]);
 
+  const handleDeleteChat = useCallback(async () => {
+    if (!auth || !selectedUserId) return;
+    if (!window.confirm('Delete all messages in this chat? This cannot be undone.')) return;
+    try {
+      await deleteConversation(selectedUserId);
+      setMessages([]);
+      setSelectedUserId(null);
+    } catch (err) {
+      window.alert(err.message || 'Failed to delete chat');
+    }
+  }, [auth, selectedUserId]);
+
   if (loading) {
     return (
       <div className="app app--loading">
@@ -110,25 +129,46 @@ function App() {
       <aside className="sidebar">
         <header className="sidebar-header">
           <h1 className="logo">Mini Telegram</h1>
-          <button type="button" className="btn-logout" onClick={handleLogout} title="Log out">
-            Log out
-          </button>
+          <div className="sidebar-header-actions">
+            {user?.is_admin && (
+              <button type="button" className="btn-admin" onClick={() => setShowAdmin(!showAdmin)} title="Admin">
+                Admin
+              </button>
+            )}
+            <button type="button" className="btn-logout" onClick={handleLogout} title="Log out">
+              Log out
+            </button>
+          </div>
         </header>
         <ChatList
           currentUser={user}
           users={users}
           selectedUserId={selectedUserId}
-          onSelect={loadConversation}
+          onSelect={(id) => { setShowAdmin(false); loadConversation(id); }}
         />
       </aside>
       <main className="main">
-        {selectedUserId ? (
+        {showAdmin ? (
+          <AdminPanel
+            currentUser={user}
+            onClose={() => setShowAdmin(false)}
+            onUsersChange={() => getUsers().then(setUsers).catch(() => setUsers([]))}
+          />
+        ) : selectedUserId ? (
           <Conversation
             currentUser={user}
             otherUser={otherUser}
             messages={messages}
             onNewMessage={handleNewMessage}
             onSendMessage={handleSendMessage}
+            onDeleteChat={handleDeleteChat}
+            onDeleteChatAsAdmin={user?.is_admin ? () => {
+              if (!window.confirm('Delete this entire conversation (admin)?')) return;
+              deleteConversationAsAdmin(user.id, selectedUserId).then(() => {
+                setMessages([]);
+                setSelectedUserId(null);
+              }).catch((e) => window.alert(e.message));
+            } : null}
             socket={socket}
           />
         ) : (
