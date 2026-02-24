@@ -48,6 +48,7 @@ export default function ChatList({ currentUser, users, selectedUserId, onlineUse
                 <div className="chat-list-info">
                   <span className="chat-list-name">{ u.display_name || u.username }</span>
                   <span className="chat-list-username">@{ u.username }{ onlineSet.has(u.id) ? ' · Online' : '' }</span>
+                  <span className="chat-list-username-mobile">@{ u.username }{ onlineSet.has(u.id) ? ' · Online' : '' }</span>
                 </div>
               </button>
             </li>

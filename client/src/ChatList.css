@@ -60,21 +60,6 @@
   min-height: 56px;
 }
 
-@media (max-width: 768px) {
-  .chat-list-search-wrap {
-    padding: 0.5rem 1rem;
-  }
-
-  .chat-list-search {
-    min-height: 44px;
-    padding: 0.7rem 1rem;
-  }
-
-  .chat-list-item {
-    min-height: 60px;
-    padding: 1rem 1.25rem;
-  }
-}
 
 .chat-list-item:hover {
   background: var(--bg-input);
@@ -128,4 +113,41 @@
 .chat-list-username {
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.chat-list-username-mobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .chat-list-search-wrap {
+    padding: 0.5rem 1rem;
+  }
+
+  .chat-list-search {
+    min-height: 44px;
+    padding: 0.7rem 1rem;
+  }
+
+  .chat-list-item {
+    min-height: 56px;
+    padding: 0.85rem 1rem;
+  }
+
+  /* On mobile: show only username (one line), hide display name */
+  .chat-list-name,
+  .chat-list-username {
+    display: none;
+  }
+
+  .chat-list-username-mobile {
+    display: block;
+    font-weight: 500;
+    font-size: 1rem;
+    color: var(--text);
+  }
+
+  .chat-list-info {
+    gap: 0;
+  }
 }

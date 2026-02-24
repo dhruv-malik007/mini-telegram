@@ -93,11 +93,12 @@ export default function Conversation({
           {(otherUser.display_name || otherUser.username).charAt(0).toUpperCase()}
         </span>
         <div className="conversation-header-info">
-          <span className="conversation-name">{otherUser.display_name || otherUser.username}</span>
-          <span className="conversation-username">
+          <span className="conversation-name">{(otherUser.display_name || otherUser.username)}</span>
+          <span className="conversation-username conversation-username-desktop">
             @{otherUser.username}
             {onlineUserIds && onlineUserIds.has(otherUser.id) && <span className="conversation-online"> · Online</span>}
           </span>
+          <span className="conversation-username-mobile">@{otherUser.username}{onlineUserIds && onlineUserIds.has(otherUser.id) ? ' · Online' : ''}</span>
         </div>
         <div className="conversation-header-actions">
           {onDeleteChat && (
