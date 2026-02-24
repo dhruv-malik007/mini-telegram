@@ -1,4 +1,13 @@
+.conversation {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-dark);
+}
+
 .conversation-header {
+  flex-shrink: 0;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -82,8 +91,9 @@
     font-size: 0.75rem;
   }
 
-  .conversation-form {
-    padding: 0.6rem 0.75rem;
+.conversation-form {
+  padding: 0.6rem 0.75rem;
+  padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
   }
 
   .conversation-input {
@@ -192,11 +202,14 @@
 
 .conversation-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem 1.25rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 .message {
@@ -247,6 +260,7 @@
 }
 
 .conversation-form {
+  flex-shrink: 0;
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--border);
   display: flex;

@@ -82,7 +82,7 @@ export default function Conversation({
   if (!otherUser) return null;
 
   return (
-    <>
+    <div className="conversation">
       <header className="conversation-header">
         {onBack && (
           <button type="button" className="conversation-back" onClick={onBack} aria-label="Back to chats">
@@ -155,6 +155,6 @@ export default function Conversation({
           Send
         </button>
       </form>
-    </>
+    </div>
   );
 }
