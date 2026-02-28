@@ -149,6 +149,16 @@ function App() {
           onlineUserIds={onlineUserIds}
           onSelect={(id) => { setShowAdmin(false); loadConversation(id); }}
         />
+        <div className="sidebar-profile" aria-label="Your profile">
+          <span className="sidebar-profile-avatar">
+            {(user?.display_name || user?.username || '?').charAt(0).toUpperCase()}
+          </span>
+          <div className="sidebar-profile-info">
+            <span className="sidebar-profile-name">{user?.display_name || user?.username || '—'}</span>
+            <span className="sidebar-profile-username">@{user?.username || '—'}</span>
+            {user?.is_admin && <span className="sidebar-profile-badge">Admin</span>}
+          </div>
+        </div>
       </aside>
       <main className="main">
         {showAdmin ? (
