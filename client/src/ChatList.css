@@ -69,6 +69,21 @@
   background: var(--bg-input);
 }
 
+.chat-list-unread {
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .chat-list-avatar-wrap {
   position: relative;
   flex-shrink: 0;

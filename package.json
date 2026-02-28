@@ -5,18 +5,20 @@
   "scripts": {
     "server": "node server/index.js",
     "client": "cd client && npm run dev",
-    "dev": "concurrently \"npm run server\" \"npm run client\""
+    "dev": "concurrently \"npm run server\" \"wait-on tcp:3001 && npm run client\""
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.6.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "wait-on": "^9.0.4"
   }
 }

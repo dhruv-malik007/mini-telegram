@@ -26,6 +26,8 @@ if (useTurso) {
     username TEXT UNIQUE NOT NULL,
     display_name TEXT,
     password_hash TEXT,
+    about TEXT,
+    last_seen_at INTEGER,
     created_at INTEGER DEFAULT (unixepoch())
   );
 
@@ -34,9 +36,31 @@ if (useTurso) {
     sender_id INTEGER NOT NULL,
     recipient_id INTEGER NOT NULL,
     content TEXT NOT NULL,
+    reply_to_id INTEGER,
+    edited_at INTEGER,
+    deleted_at INTEGER,
     created_at INTEGER DEFAULT (unixepoch()),
     FOREIGN KEY (sender_id) REFERENCES users(id),
-    FOREIGN KEY (recipient_id) REFERENCES users(id)
+    FOREIGN KEY (recipient_id) REFERENCES users(id),
+    FOREIGN KEY (reply_to_id) REFERENCES messages(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS message_hidden (
+    user_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    PRIMARY KEY (user_id, message_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS read_receipts (
+    user_id INTEGER NOT NULL,
+    other_user_id INTEGER NOT NULL,
+    last_read_message_id INTEGER NOT NULL DEFAULT 0,
+    read_at INTEGER DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, other_user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (other_user_id) REFERENCES users(id)
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(sender_id, recipient_id);
@@ -51,10 +75,15 @@ if (useTurso) {
     for (const sql of statements) {
       await client.execute(sql);
     }
-    // Migrations: add columns if missing (ignore errors if already exist)
+    // Migrations: add columns/tables if missing (ignore errors if already exist)
     for (const sql of [
       'ALTER TABLE users ADD COLUMN password_hash TEXT',
       'ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN about TEXT',
+      'ALTER TABLE users ADD COLUMN last_seen_at INTEGER',
+      'ALTER TABLE messages ADD COLUMN reply_to_id INTEGER',
+      'ALTER TABLE messages ADD COLUMN edited_at INTEGER',
+      'ALTER TABLE messages ADD COLUMN deleted_at INTEGER',
     ]) {
       try {
         await client.execute(sql);
@@ -123,6 +152,8 @@ if (useTurso) {
     username TEXT UNIQUE NOT NULL,
     display_name TEXT,
     password_hash TEXT,
+    about TEXT,
+    last_seen_at INTEGER,
     created_at INTEGER DEFAULT (strftime('%s', 'now'))
   );
 
@@ -131,9 +162,31 @@ if (useTurso) {
     sender_id INTEGER NOT NULL,
     recipient_id INTEGER NOT NULL,
     content TEXT NOT NULL,
+    reply_to_id INTEGER,
+    edited_at INTEGER,
+    deleted_at INTEGER,
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
     FOREIGN KEY (sender_id) REFERENCES users(id),
-    FOREIGN KEY (recipient_id) REFERENCES users(id)
+    FOREIGN KEY (recipient_id) REFERENCES users(id),
+    FOREIGN KEY (reply_to_id) REFERENCES messages(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS message_hidden (
+    user_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    PRIMARY KEY (user_id, message_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS read_receipts (
+    user_id INTEGER NOT NULL,
+    other_user_id INTEGER NOT NULL,
+    last_read_message_id INTEGER NOT NULL DEFAULT 0,
+    read_at INTEGER DEFAULT (strftime('%s', 'now')),
+    PRIMARY KEY (user_id, other_user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (other_user_id) REFERENCES users(id)
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(sender_id, recipient_id);
@@ -142,13 +195,17 @@ if (useTurso) {
 
   try {
     let cols = sqlite.prepare('PRAGMA table_info(users)').all();
-    if (!cols.some((c) => c.name === 'password_hash')) {
-      sqlite.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
-    }
+    if (!cols.some((c) => c.name === 'password_hash')) sqlite.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+    if (!cols.some((c) => c.name === 'is_admin')) sqlite.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0');
     cols = sqlite.prepare('PRAGMA table_info(users)').all();
-    if (!cols.some((c) => c.name === 'is_admin')) {
-      sqlite.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0');
-    }
+    if (!cols.some((c) => c.name === 'about')) sqlite.exec('ALTER TABLE users ADD COLUMN about TEXT');
+    if (!cols.some((c) => c.name === 'last_seen_at')) sqlite.exec('ALTER TABLE users ADD COLUMN last_seen_at INTEGER');
+    cols = sqlite.prepare('PRAGMA table_info(messages)').all();
+    if (!cols.some((c) => c.name === 'reply_to_id')) sqlite.exec('ALTER TABLE messages ADD COLUMN reply_to_id INTEGER');
+    if (!cols.some((c) => c.name === 'edited_at')) sqlite.exec('ALTER TABLE messages ADD COLUMN edited_at INTEGER');
+    if (!cols.some((c) => c.name === 'deleted_at')) sqlite.exec('ALTER TABLE messages ADD COLUMN deleted_at INTEGER');
+    sqlite.exec('CREATE TABLE IF NOT EXISTS message_hidden (user_id INTEGER NOT NULL, message_id INTEGER NOT NULL, PRIMARY KEY (user_id, message_id))');
+    sqlite.exec('CREATE TABLE IF NOT EXISTS read_receipts (user_id INTEGER NOT NULL, other_user_id INTEGER NOT NULL, last_read_message_id INTEGER NOT NULL DEFAULT 0, read_at INTEGER DEFAULT (strftime(\'%s\', \'now\')), PRIMARY KEY (user_id, other_user_id))');
   } catch (_) {}
 
   ready = Promise.resolve();

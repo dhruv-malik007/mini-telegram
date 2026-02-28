@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const { createServer } = require('http');
@@ -22,6 +23,15 @@ const PORT = process.env.PORT || 3001;
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 const hasClientBuild = fs.existsSync(clientDist);
 const SALT_ROUNDS = 10;
+const EDIT_WINDOW_SECONDS = 15 * 60; // 15 minutes
+
+function now() {
+  return Math.floor(Date.now() / 1000);
+}
+
+async function updateLastSeen(userId) {
+  await db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), userId);
+}
 
 // --- REST API ---
 
@@ -71,22 +81,77 @@ app.post('/api/login', async (req, res) => {
   res.json({ user, token });
 });
 
-// Current user (for refresh / is_admin)
+// Current user (for refresh / is_admin, about, last_seen)
 app.get('/api/me', authMiddleware, async (req, res) => {
   try {
-    const row = await db.prepare('SELECT id, username, display_name, is_admin FROM users WHERE id = ?').get(req.userId);
+    await updateLastSeen(req.userId);
+    const row = await db.prepare('SELECT id, username, display_name, is_admin, about, last_seen_at FROM users WHERE id = ?').get(req.userId);
     if (!row) return res.status(404).json({ error: 'User not found' });
-    res.json({ id: row.id, username: row.username, display_name: row.display_name, is_admin: !!row.is_admin });
+    res.json({
+      id: row.id,
+      username: row.username,
+      display_name: row.display_name,
+      is_admin: !!row.is_admin,
+      about: row.about || '',
+      last_seen_at: row.last_seen_at ?? null,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Protected routes
+// Update profile (about, display_name)
+app.patch('/api/me', authMiddleware, async (req, res) => {
+  try {
+    const { about, display_name } = req.body || {};
+    if (about !== undefined) {
+      const val = String(about).trim().slice(0, 150);
+      await db.prepare('UPDATE users SET about = ? WHERE id = ?').run(val, req.userId);
+    }
+    if (display_name !== undefined) {
+      const val = String(display_name).trim().slice(0, 100);
+      await db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(val || null, req.userId);
+    }
+    const row = await db.prepare('SELECT id, username, display_name, is_admin, about, last_seen_at FROM users WHERE id = ?').get(req.userId);
+    res.json({
+      id: row.id,
+      username: row.username,
+      display_name: row.display_name,
+      is_admin: !!row.is_admin,
+      about: row.about || '',
+      last_seen_at: row.last_seen_at ?? null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Protected routes — list users with last_seen_at, about, unread_count
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
-    const users = await db.prepare('SELECT id, username, display_name FROM users WHERE id != ? ORDER BY username').all(req.userId);
-    res.json(users);
+    await updateLastSeen(req.userId);
+    const users = await db.prepare('SELECT id, username, display_name, about, last_seen_at FROM users WHERE id != ? ORDER BY username').all(req.userId);
+    const receipts = await db.prepare('SELECT other_user_id, last_read_message_id FROM read_receipts WHERE user_id = ?').all(req.userId);
+    const lastReadByOther = new Map(receipts.map((r) => [r.other_user_id, r.last_read_message_id]));
+    const result = [];
+    for (const u of users) {
+      const otherId = u.id;
+      const lastRead = lastReadByOther.get(otherId) ?? 0;
+      const unreadRow = await db.prepare(`
+        SELECT COUNT(*) AS c FROM messages m
+        LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+        WHERE m.sender_id = ? AND m.recipient_id = ? AND m.deleted_at IS NULL AND h.message_id IS NULL AND m.id > ?
+      `).get(req.userId, otherId, req.userId, lastRead);
+      result.push({
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name,
+        about: u.about || '',
+        last_seen_at: u.last_seen_at ?? null,
+        unread_count: unreadRow?.c ?? 0,
+      });
+    }
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -99,13 +164,121 @@ app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'invalid user id' });
   }
   try {
+    await updateLastSeen(userId);
     const messages = await db.prepare(`
-      SELECT id, sender_id, recipient_id, content, created_at
-      FROM messages
-      WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
-      ORDER BY created_at ASC
-    `).all(userId, otherId, otherId, userId);
-    res.json(messages);
+      SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at
+      FROM messages m
+      LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+      WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
+        AND h.message_id IS NULL
+      ORDER BY m.created_at ASC
+    `).all(userId, userId, otherId, otherId, userId);
+    const filtered = messages.filter((m) => !m.deleted_at).map(({ deleted_at, ...m }) => ({ ...m, reply_to_id: m.reply_to_id ?? null, edited_at: m.edited_at ?? null }));
+    const maxId = filtered.length ? Math.max(...filtered.map((m) => m.id)) : 0;
+    const n = now();
+    const upsertReceipt = db.prepare(`
+      INSERT INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, other_user_id) DO UPDATE SET
+        last_read_message_id = max(read_receipts.last_read_message_id, excluded.last_read_message_id),
+        read_at = excluded.read_at
+    `);
+    try {
+      await upsertReceipt.run(userId, otherId, maxId, n);
+    } catch (_) {
+      await db.prepare('REPLACE INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)').run(userId, otherId, maxId, n);
+    }
+    const otherReceipt = await db.prepare('SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND other_user_id = ?').get(otherId, userId);
+    const lastReadByOther = otherReceipt?.last_read_message_id ?? 0;
+    res.json({ messages: filtered, lastReadByOther });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Mark conversation as read (optional; GET conversation already does this)
+app.post('/api/conversation/:otherId/read', authMiddleware, async (req, res) => {
+  const userId = req.userId;
+  const otherId = parseInt(req.params.otherId, 10);
+  if (isNaN(otherId)) return res.status(400).json({ error: 'invalid user id' });
+  try {
+    await updateLastSeen(userId);
+    const maxRow = await db.prepare(`
+      SELECT MAX(id) AS mid FROM messages m
+      LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+      WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?)) AND m.deleted_at IS NULL AND h.message_id IS NULL
+    `).get(userId, userId, otherId, otherId, userId);
+    const maxId = maxRow?.mid ?? 0;
+    const n = now();
+    try {
+      await db.prepare(`
+        INSERT INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, other_user_id) DO UPDATE SET last_read_message_id = max(read_receipts.last_read_message_id, excluded.last_read_message_id), read_at = excluded.read_at
+      `).run(userId, otherId, maxId, n);
+    } catch (_) {
+      await db.prepare('REPLACE INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)').run(userId, otherId, maxId, n);
+    }
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Edit message (sender only, within 15 min)
+app.patch('/api/messages/:id', authMiddleware, async (req, res) => {
+  const userId = req.userId;
+  const id = parseInt(req.params.id, 10);
+  const { content } = req.body || {};
+  if (isNaN(id) || typeof content !== 'string') return res.status(400).json({ error: 'invalid request' });
+  const trimmed = content.trim().slice(0, 10000);
+  if (!trimmed) return res.status(400).json({ error: 'content required' });
+  try {
+    const row = await db.prepare('SELECT id, sender_id, created_at FROM messages WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!row) return res.status(404).json({ error: 'message not found' });
+    if (row.sender_id !== userId) return res.status(403).json({ error: 'not your message' });
+    if (now() - row.created_at > EDIT_WINDOW_SECONDS) return res.status(400).json({ error: 'edit window expired (15 min)' });
+    await db.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?').run(trimmed, now(), id);
+    const updated = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at FROM messages WHERE id = ?').get(id);
+    [updated.sender_id, updated.recipient_id].forEach((uid) => {
+      const socks = onlineByUserId.get(uid);
+      if (socks) socks.forEach((sid) => io.to(sid).emit('message_updated', updated));
+    });
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete for everyone (sender only; soft delete)
+app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
+  const userId = req.userId;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'invalid message id' });
+  try {
+    const row = await db.prepare('SELECT id, sender_id, recipient_id FROM messages WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ error: 'message not found' });
+    if (row.sender_id !== userId) return res.status(403).json({ error: 'not your message' });
+    await db.prepare('UPDATE messages SET deleted_at = ?, content = ? WHERE id = ?').run(now(), '', id);
+    [row.sender_id, row.recipient_id].forEach((uid) => {
+      const socks = onlineByUserId.get(uid);
+      if (socks) socks.forEach((sid) => io.to(sid).emit('message_deleted', { id }));
+    });
+    res.json({ id, deleted: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete for me (hide message from my view)
+app.post('/api/messages/:id/hide', authMiddleware, async (req, res) => {
+  const userId = req.userId;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'invalid message id' });
+  try {
+    const row = await db.prepare('SELECT id, sender_id, recipient_id FROM messages WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ error: 'message not found' });
+    if (row.sender_id !== userId && row.recipient_id !== userId) return res.status(403).json({ error: 'not in this conversation' });
+    await db.prepare('INSERT OR IGNORE INTO message_hidden (user_id, message_id) VALUES (?, ?)').run(userId, id);
+    res.json({ id, hidden: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -209,15 +382,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async (payload) => {
-    const { recipientId, content } = payload || {};
+    const { recipientId, content, replyToId } = payload || {};
     if (typeof recipientId !== 'number' || typeof content !== 'string' || !socket.userId) return;
     const trimmed = content.trim().slice(0, 10000);
     if (!trimmed) return;
+    const replyTo = replyToId != null ? parseInt(replyToId, 10) : null;
     try {
-      const stmt = db.prepare('INSERT INTO messages (sender_id, recipient_id, content) VALUES (?, ?, ?)');
-      const result = await stmt.run(socket.userId, recipientId, trimmed);
-      const row = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at FROM messages WHERE id = ?').get(result.lastInsertRowid);
-      // Emit to sender (confirm) and to recipient if online
+      const stmt = db.prepare('INSERT INTO messages (sender_id, recipient_id, content, reply_to_id) VALUES (?, ?, ?, ?)');
+      const result = await stmt.run(socket.userId, recipientId, trimmed, replyTo && !isNaN(replyTo) ? replyTo : null);
+      const row = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at FROM messages WHERE id = ?').get(result.lastInsertRowid);
+      await updateLastSeen(socket.userId);
       socket.emit('new_message', row);
       const recipientSockets = onlineByUserId.get(recipientId);
       if (recipientSockets) {
@@ -226,6 +400,28 @@ io.on('connection', (socket) => {
     } catch (e) {
       socket.emit('error', { message: e.message });
     }
+  });
+
+  socket.on('mark_read', async (payload) => {
+    const { otherUserId, lastReadMessageId } = payload || {};
+    if (typeof otherUserId !== 'number' || !socket.userId) return;
+    const mid = lastReadMessageId != null ? parseInt(lastReadMessageId, 10) : 0;
+    try {
+      await updateLastSeen(socket.userId);
+      const n = now();
+      try {
+        await db.prepare(`
+          INSERT INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT(user_id, other_user_id) DO UPDATE SET last_read_message_id = max(read_receipts.last_read_message_id, excluded.last_read_message_id), read_at = excluded.read_at
+        `).run(socket.userId, otherUserId, mid, n);
+      } catch (_) {
+        await db.prepare('REPLACE INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)').run(socket.userId, otherUserId, mid, n);
+      }
+      const recipientSockets = onlineByUserId.get(otherUserId);
+      if (recipientSockets) {
+        recipientSockets.forEach((sid) => io.to(sid).emit('read_receipt', { userId: socket.userId, lastReadMessageId: mid }));
+      }
+    } catch (_) {}
   });
 
   socket.on('disconnect', () => {

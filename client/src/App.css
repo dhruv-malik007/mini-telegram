@@ -94,6 +94,11 @@
   background: var(--bg-input);
 }
 
+.sidebar-profile .sidebar-profile-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .sidebar-profile-avatar {
   width: 44px;
   height: 44px;
@@ -131,6 +136,99 @@
   font-weight: 600;
   color: var(--accent);
   margin-top: 0.15rem;
+}
+
+.sidebar-profile-about {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-profile-edit {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar-profile-edit:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.profile-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.profile-modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  max-width: 360px;
+  width: 100%;
+}
+
+.profile-modal h3 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.profile-modal label {
+  display: block;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.profile-modal label textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 1rem;
+  resize: vertical;
+}
+
+.profile-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.profile-modal-actions button {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+.profile-modal-actions button:last-child {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .main {

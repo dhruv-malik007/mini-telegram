@@ -50,6 +50,9 @@ export default function ChatList({ currentUser, users, selectedUserId, onlineUse
                   <span className="chat-list-username">@{ u.username }{ onlineSet.has(u.id) ? ' · Online' : '' }</span>
                   <span className="chat-list-username-mobile">@{ u.username }{ onlineSet.has(u.id) ? ' · Online' : '' }</span>
                 </div>
+                {(u.unread_count ?? 0) > 0 && (
+                  <span className="chat-list-unread">{u.unread_count > 99 ? '99+' : u.unread_count}</span>
+                )}
               </button>
             </li>
           ))

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { getUsers, login, register, getConversation, getMe, deleteConversation, getAdminUsers, deleteConversationAsAdmin, deleteUser, setUserAdmin } from './api';
+import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteConversationAsAdmin, deleteUser, setUserAdmin } from './api';
 import { getSocketUrl } from './config';
 import Login from './Login';
 import ChatList from './ChatList';
@@ -19,6 +19,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showAdmin, setShowAdmin] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [lastReadByOther, setLastReadByOther] = useState(0);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [profileAbout, setProfileAbout] = useState('');
 
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_KEY);
@@ -29,6 +32,7 @@ function App() {
         // Refresh user from server (e.g. is_admin)
         getMe().then((user) => {
           setAuth((prev) => (prev ? { ...prev, user } : null));
+          setProfileAbout(user?.about ?? '');
         }).catch(() => {});
       } catch (_) {}
     }
@@ -60,8 +64,10 @@ function App() {
     if (!auth) return;
     setSelectedUserId(otherId);
     try {
-      const list = await getConversation(otherId);
+      const { messages: list, lastReadByOther: read } = await getConversation(otherId);
       setMessages(list);
+      setLastReadByOther(read ?? 0);
+      getUsers().then(setUsers).catch(() => {});
     } catch (err) {
       if (err.status === 401) setAuth(null);
       else setMessages([]);
@@ -70,12 +76,16 @@ function App() {
 
   const handleLogin = useCallback(async (username, password) => {
     const { user, token } = await login(username, password);
-    setAuth({ user, token });
+    const full = await getMe().catch(() => user);
+    setAuth({ user: full?.id ? full : user, token });
+    setProfileAbout(full?.about ?? '');
   }, []);
 
   const handleRegister = useCallback(async (username, password, displayName) => {
     const { user, token } = await register(username, password, displayName);
-    setAuth({ user, token });
+    const full = await getMe().catch(() => user);
+    setAuth({ user: full?.id ? full : user, token });
+    setProfileAbout(full?.about ?? '');
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -89,10 +99,37 @@ function App() {
     setMessages((prev) => [...prev, msg]);
   }, []);
 
-  const handleSendMessage = useCallback((content) => {
+  const handleSendMessage = useCallback((content, replyToId) => {
     if (!socket || !selectedUserId) return;
-    socket.emit('send_message', { recipientId: selectedUserId, content });
+    socket.emit('send_message', { recipientId: selectedUserId, content, replyToId: replyToId || undefined });
   }, [socket, selectedUserId]);
+
+  const handleMessageUpdated = useCallback((updated) => {
+    setMessages((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
+  }, []);
+
+  const handleMessageDeleted = useCallback((id) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
+  const handleMessageHidden = useCallback((id) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
+  const handleReadReceipt = useCallback(({ lastReadMessageId }) => {
+    setLastReadByOther((prev) => Math.max(prev, lastReadMessageId));
+  }, []);
+
+  const handleProfileSave = useCallback(async (about) => {
+    try {
+      const user = await updateMe({ about });
+      setAuth((prev) => (prev ? { ...prev, user } : null));
+      setProfileAbout(user.about ?? '');
+      setShowProfileEdit(false);
+    } catch (e) {
+      window.alert(e.message || 'Failed to update profile');
+    }
+  }, []);
 
   const handleDeleteChat = useCallback(async () => {
     if (!auth || !selectedUserId) return;
@@ -156,10 +193,29 @@ function App() {
           <div className="sidebar-profile-info">
             <span className="sidebar-profile-name">{user?.display_name || user?.username || '—'}</span>
             <span className="sidebar-profile-username">@{user?.username || '—'}</span>
+            {user?.about ? <span className="sidebar-profile-about">{user.about}</span> : null}
             {user?.is_admin && <span className="sidebar-profile-badge">Admin</span>}
           </div>
+          <button type="button" className="sidebar-profile-edit" onClick={() => { setProfileAbout(user?.about ?? ''); setShowProfileEdit(true); }} title="Edit profile">
+            ✎
+          </button>
         </div>
       </aside>
+      {showProfileEdit && (
+        <div className="profile-modal-overlay" onClick={() => setShowProfileEdit(false)}>
+          <div className="profile-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit profile</h3>
+            <label>
+              About
+              <textarea value={profileAbout} onChange={(e) => setProfileAbout(e.target.value)} placeholder="Hey there, I am using Mini Telegram" rows={2} maxLength={150} />
+            </label>
+            <div className="profile-modal-actions">
+              <button type="button" onClick={() => setShowProfileEdit(false)}>Cancel</button>
+              <button type="button" onClick={() => handleProfileSave(profileAbout.trim())}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
       <main className="main">
         {showAdmin ? (
           <AdminPanel
@@ -172,10 +228,15 @@ function App() {
             currentUser={user}
             otherUser={otherUser}
             messages={messages}
+            lastReadByOther={lastReadByOther}
             onlineUserIds={onlineUserIds}
             onBack={() => setSelectedUserId(null)}
             onNewMessage={handleNewMessage}
             onSendMessage={handleSendMessage}
+            onMessageUpdated={handleMessageUpdated}
+            onMessageDeleted={handleMessageDeleted}
+            onMessageHidden={handleMessageHidden}
+            onReadReceipt={handleReadReceipt}
             onDeleteChat={handleDeleteChat}
             onDeleteChatAsAdmin={user?.is_admin ? () => {
               if (!window.confirm('Delete this entire conversation (admin)?')) return;

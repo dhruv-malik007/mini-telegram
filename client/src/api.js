@@ -62,7 +62,8 @@ export async function getConversation(otherId) {
     throw e;
   }
   if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? { messages: data, lastReadByOther: 0 } : data;
 }
 
 export async function getMe() {
@@ -72,6 +73,43 @@ export async function getMe() {
     e.status = 401;
     throw e;
   }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateMe({ about, display_name }) {
+  const res = await fetch(getApiUrl('/api/me'), {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ about, display_name }),
+  });
+  if (res.status === 401) {
+    const e = new Error('Unauthorized');
+    e.status = 401;
+    throw e;
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function editMessage(id, content) {
+  const res = await fetch(getApiUrl(`/api/messages/${id}`), {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteMessage(id) {
+  const res = await fetch(getApiUrl(`/api/messages/${id}`), { method: 'DELETE', headers: authHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function hideMessage(id) {
+  const res = await fetch(getApiUrl(`/api/messages/${id}/hide`), { method: 'POST', headers: authHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
