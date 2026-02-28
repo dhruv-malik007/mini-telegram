@@ -152,6 +152,10 @@ if (useTurso) {
         },
       };
     },
+    /** No-op for Turso (no PRAGMA); server uses same delete order. */
+    async runWithForeignKeysDisabled(fn) {
+      return fn();
+    },
   };
 } else {
   const Database = require('better-sqlite3');
@@ -249,6 +253,15 @@ if (useTurso) {
         get: (...args) => Promise.resolve(stmt.get(...args)),
         all: (...args) => Promise.resolve(stmt.all(...args)),
       };
+    },
+    /** Run fn with foreign key checks disabled (SQLite only). Use for bulk deletes that touch multiple tables. */
+    async runWithForeignKeysDisabled(fn) {
+      sqlite.pragma('foreign_keys = OFF');
+      try {
+        await fn();
+      } finally {
+        sqlite.pragma('foreign_keys = ON');
+      }
     },
   };
 }

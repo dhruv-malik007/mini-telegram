@@ -104,6 +104,18 @@ function invalidateConv(userId, otherId) {
   messageStore.delete(convKey(userId, otherId));
 }
 
+/** Invalidate all conversation caches that include this user (e.g. when user is deleted) */
+function invalidateConvsForUser(userId) {
+  const id = Number(userId);
+  if (isNaN(id)) return;
+  for (const key of messageStore.keys()) {
+    const m = key.match(/^conv:(\d+):(\d+)$/);
+    if (m && (Number(m[1]) === id || Number(m[2]) === id)) {
+      messageStore.delete(key);
+    }
+  }
+}
+
 module.exports = {
   get,
   set,
@@ -113,5 +125,6 @@ module.exports = {
   setConvMessages,
   appendConvMessage,
   invalidateConv,
+  invalidateConvsForUser,
   MESSAGE_CACHE_SIZE,
 };

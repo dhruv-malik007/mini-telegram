@@ -180,14 +180,25 @@ From the project root, run:
 
 ### Optional: Build APK from command line
 
-If you have the [Android SDK](https://developer.android.com/studio) and `ANDROID_HOME` set:
+**One command from project root** (builds web app + syncs + builds debug APK):
+
+```bash
+./scripts/build-android.sh https://your-server.com --apk
+# Or with npm (pass URL and --apk after --):
+npm run android:apk -- https://your-server.com --apk
+```
+
+APK output: `client/android/app/build/outputs/apk/debug/app-debug.apk`
+
+**From the `client` folder** (set `VITE_API_URL` in `client/.env` or export it first):
 
 ```bash
 cd client
+export VITE_API_URL="https://your-server.com"   # or add to client/.env
 npm run apk
 ```
 
-APK path: `client/android/app/build/outputs/apk/debug/app-debug.apk`.
+Requires [Android SDK](https://developer.android.com/studio) (e.g. Android Studio) and `ANDROID_HOME` set for Gradle.
 
 ---
 

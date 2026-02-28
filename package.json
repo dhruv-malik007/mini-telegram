@@ -5,7 +5,8 @@
   "scripts": {
     "server": "node server/index.js",
     "client": "cd client && npm run dev",
-    "dev": "concurrently \"npm run server\" \"wait-on tcp:3001 && npm run client\""
+    "dev": "concurrently \"npm run server\" \"wait-on tcp:3001 && npm run client\"",
+    "android:apk": "bash scripts/build-android.sh"
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",

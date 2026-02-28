@@ -44,6 +44,31 @@ const clientDist = path.join(__dirname, '..', 'client', 'dist');
 const hasClientBuild = fs.existsSync(clientDist);
 const SALT_ROUNDS = 10;
 const EDIT_WINDOW_SECONDS = 15 * 60; // 15 minutes
+const MAX_PASSWORD_LENGTH = 256; // cap to avoid bcrypt DoS
+
+// Simple in-memory rate limit for auth endpoints (per IP)
+const authRateLimit = new Map(); // ip -> { count, resetAt }
+const AUTH_RATE_WINDOW_MS = 60 * 1000;
+const AUTH_RATE_MAX = 15;
+
+function checkAuthRateLimit(ip) {
+  const now = Date.now();
+  let entry = authRateLimit.get(ip);
+  if (!entry) {
+    entry = { count: 0, resetAt: now + AUTH_RATE_WINDOW_MS };
+    authRateLimit.set(ip, entry);
+  }
+  if (now >= entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + AUTH_RATE_WINDOW_MS;
+  }
+  entry.count++;
+  return entry.count <= AUTH_RATE_MAX;
+}
+
+function getClientIp(req) {
+  return (req.headers['x-forwarded-for'] && req.headers['x-forwarded-for'].split(',')[0].trim()) || req.socket?.remoteAddress || 'unknown';
+}
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -93,12 +118,19 @@ async function sendPushToUser(userId, payload) {
 
 // Register (username, password, optional display_name)
 app.post('/api/register', async (req, res) => {
+  const ip = getClientIp(req);
+  if (!checkAuthRateLimit(ip)) {
+    return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+  }
   const { username, password, display_name } = req.body || {};
   if (!username || typeof username !== 'string') {
     return res.status(400).json({ error: 'username required' });
   }
   if (!password || typeof password !== 'string' || password.length < 6) {
     return res.status(400).json({ error: 'password required (min 6 characters)' });
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: 'password too long' });
   }
   const name = (display_name || username).trim().slice(0, 100);
   const uname = username.trim().slice(0, 64);
@@ -109,6 +141,7 @@ app.post('/api/register', async (req, res) => {
     const row = await db.prepare('SELECT id, username, display_name, is_admin FROM users WHERE id = ?').get(result.lastInsertRowid);
     const user = { id: row.id, username: row.username, display_name: row.display_name, is_admin: !!row.is_admin };
     const token = signToken(user.id);
+    authRateLimit.delete(ip);
     res.status(201).json({ user, token });
   } catch (e) {
     if (e.code === 'SQLITE_CONSTRAINT_UNIQUE' || (e.code && String(e.code).includes('CONSTRAINT') && String(e.code).includes('UNIQUE'))) {
@@ -120,9 +153,16 @@ app.post('/api/register', async (req, res) => {
 
 // Login (username, password)
 app.post('/api/login', async (req, res) => {
+  const ip = getClientIp(req);
+  if (!checkAuthRateLimit(ip)) {
+    return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+  }
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password required' });
+  }
+  if (typeof password === 'string' && password.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: 'invalid username or password' });
   }
   const row = await db.prepare('SELECT id, username, display_name, password_hash, is_admin FROM users WHERE username = ?').get(username.trim());
   if (!row || !row.password_hash) {
@@ -134,6 +174,7 @@ app.post('/api/login', async (req, res) => {
   }
   const user = { id: row.id, username: row.username, display_name: row.display_name, is_admin: !!(row.is_admin) };
   const token = signToken(user.id);
+  authRateLimit.delete(ip);
   res.json({ user, token });
 });
 
@@ -486,14 +527,23 @@ app.delete('/api/admin/conversation', ...adminMiddleware, async (req, res) => {
   }
 });
 
-// Admin: delete a user and all their messages
+// Admin: delete a user and all their data (chats, messages, receipts, push subs, then user)
 app.delete('/api/admin/users/:id', ...adminMiddleware, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'invalid user id' });
   if (id === req.userId) return res.status(400).json({ error: 'cannot delete yourself' });
   try {
-    await db.prepare('DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?').run(id, id);
-    await db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    await db.runWithForeignKeysDisabled(async () => {
+      // Delete all data that references this user or their messages (FK checks disabled for SQLite)
+      await db.prepare('DELETE FROM message_hidden WHERE user_id = ? OR message_id IN (SELECT id FROM messages WHERE sender_id = ? OR recipient_id = ?)').run(id, id, id);
+      await db.prepare('DELETE FROM read_receipts WHERE user_id = ? OR other_user_id = ?').run(id, id);
+      await db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(id);
+      await db.prepare('DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?').run(id, id);
+      await db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    });
+    cache.invalidateUser(id);
+    cache.invalidate('users');
+    cache.invalidateConvsForUser(id);
     res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: e.message });

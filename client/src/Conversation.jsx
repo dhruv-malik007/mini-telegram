@@ -166,6 +166,7 @@ export default function Conversation({
   onLoadMore,
   onlineUserIds,
   onBack,
+  onClose,
   onNewMessage,
   onSendMessage,
   onMessageUpdated,
@@ -173,7 +174,6 @@ export default function Conversation({
   onMessageHidden,
   onReadReceipt,
   onDeleteChat,
-  onDeleteChatAsAdmin,
   socket,
 }) {
   const [input, setInput] = useState('');
@@ -275,6 +275,16 @@ export default function Conversation({
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasMoreMessages, onLoadMore, loadingMore, handleLoadMore]);
+
+  useEffect(() => {
+    if (menuMessageId == null) return;
+    const onDocClick = (e) => {
+      if (e.target.closest('.message-menu') || e.target.closest('.message-dropdown-trigger')) return;
+      setMenuMessageId(null);
+    };
+    document.addEventListener('click', onDocClick, true);
+    return () => document.removeEventListener('click', onDocClick, true);
+  }, [menuMessageId]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -420,9 +430,9 @@ export default function Conversation({
               Delete chat
             </button>
           )}
-          {onDeleteChatAsAdmin && (
-            <button type="button" className="btn-delete-chat admin" onClick={onDeleteChatAsAdmin} title="Delete conversation (admin)">
-              Delete (admin)
+          {onClose && (
+            <button type="button" className="conversation-close" onClick={onClose} aria-label="Close chat" title="Close chat">
+              <span aria-hidden>×</span>
             </button>
           )}
         </div>
@@ -470,6 +480,17 @@ export default function Conversation({
                     setMenuMessageId(menuMessageId === msg.id ? null : msg.id);
                   }}
                 >
+                  {!pending && (
+                    <button
+                      type="button"
+                      className="message-dropdown-trigger"
+                      onClick={(e) => { e.stopPropagation(); setMenuMessageId(menuMessageId === msg.id ? null : msg.id); }}
+                      aria-label="Message options"
+                      aria-expanded={menuMessageId === msg.id}
+                    >
+                      <span className="message-dropdown-icon" aria-hidden>⋮</span>
+                    </button>
+                  )}
                   {replyTo && (
                     <div className="message-reply-preview">
                       <span className="message-reply-name">{replyTo.sender_id === currentUser.id ? 'You' : (otherUser.display_name || otherUser.username)}</span>

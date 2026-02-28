@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteConversationAsAdmin, deleteUser, setUserAdmin, getVapidPublic, subscribePush } from './api';
+import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteUser, setUserAdmin, getVapidPublic, subscribePush } from './api';
 import { getSocketUrl } from './config';
 import Login from './Login';
 import ChatList from './ChatList';
@@ -21,6 +21,7 @@ function App() {
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
   const [lastReadByOther, setLastReadByOther] = useState(0);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [conversationLoading, setConversationLoading] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [profileAbout, setProfileAbout] = useState('');
   const [pushStatus, setPushStatus] = useState(null); // null | 'enabled' | 'unsupported' | 'denied' | 'error'
@@ -66,6 +67,7 @@ function App() {
     if (!auth) return;
     setSelectedUserId(otherId);
     setHasMoreMessages(false);
+    setConversationLoading(true);
     try {
       const { messages: list, lastReadByOther: read, hasMore } = await getConversation(otherId);
       setMessages(list ?? []);
@@ -75,8 +77,15 @@ function App() {
     } catch (err) {
       if (err.status === 401) setAuth(null);
       else setMessages([]);
+    } finally {
+      setConversationLoading(false);
     }
   }, [auth]);
+
+  const closeConversation = useCallback(() => {
+    setSelectedUserId(null);
+    setConversationLoading(false);
+  }, []);
 
   const loadMoreMessages = useCallback(async (otherId, beforeId) => {
     if (!auth || !beforeId) return;
@@ -309,6 +318,29 @@ function App() {
             onUsersChange={() => getUsers().then(setUsers).catch(() => setUsers([]))}
           />
         ) : selectedUserId ? (
+          conversationLoading ? (
+            <div className="conversation conversation--loading">
+              <header className="conversation-header">
+                <button type="button" className="conversation-back" onClick={closeConversation} aria-label="Back to chats">
+                  <span className="conversation-back-icon" aria-hidden>←</span>
+                </button>
+                <span className="conversation-avatar">
+                  {(otherUser?.display_name || otherUser?.username || '?').charAt(0).toUpperCase()}
+                </span>
+                <div className="conversation-header-info">
+                  <span className="conversation-name">{(otherUser?.display_name || otherUser?.username || 'Chat')}</span>
+                  <span className="conversation-username">@{otherUser?.username || ''}</span>
+                </div>
+                <button type="button" className="conversation-close" onClick={closeConversation} aria-label="Close chat" title="Close">
+                  <span aria-hidden>×</span>
+                </button>
+              </header>
+              <div className="conversation-loading-body">
+                <span className="loader" />
+                <p className="conversation-loading-text">Opening chat…</p>
+              </div>
+            </div>
+          ) : (
           <Conversation
             currentUser={user}
             otherUser={otherUser}
@@ -317,7 +349,8 @@ function App() {
             hasMoreMessages={hasMoreMessages}
             onLoadMore={loadMoreMessages}
             onlineUserIds={onlineUserIds}
-            onBack={() => setSelectedUserId(null)}
+            onBack={closeConversation}
+            onClose={closeConversation}
             onNewMessage={handleNewMessage}
             onSendMessage={handleSendMessage}
             onMessageUpdated={handleMessageUpdated}
@@ -325,15 +358,9 @@ function App() {
             onMessageHidden={handleMessageHidden}
             onReadReceipt={handleReadReceipt}
             onDeleteChat={handleDeleteChat}
-            onDeleteChatAsAdmin={user?.is_admin ? () => {
-              if (!window.confirm('Delete this entire conversation (admin)?')) return;
-              deleteConversationAsAdmin(user.id, selectedUserId).then(() => {
-                setMessages([]);
-                setSelectedUserId(null);
-              }).catch((e) => window.alert(e.message));
-            } : null}
             socket={socket}
           />
+          )
         ) : (
           <div className="welcome">
             <p>Select a chat or start a conversation.</p>
