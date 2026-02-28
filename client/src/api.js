@@ -114,6 +114,39 @@ export async function hideMessage(id) {
   return res.json();
 }
 
+export async function uploadMedia(file) {
+  const token = getToken();
+  if (!token) throw new Error('Unauthorized');
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(getApiUrl('/api/upload'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || res.statusText || 'Upload failed');
+  }
+  return res.json();
+}
+
+export async function getVapidPublic() {
+  const res = await fetch(getApiUrl('/api/push/vapid-public'));
+  if (!res.ok) throw new Error('Push not available');
+  const data = await res.json();
+  return data.publicKey;
+}
+
+export async function subscribePush(subscription) {
+  const res = await fetch(getApiUrl('/api/push/subscribe'), {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ subscription }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function deleteConversation(otherId) {
   const res = await fetch(getApiUrl(`/api/conversation/${otherId}`), { method: 'DELETE', headers: authHeaders() });
   if (res.status === 401) {

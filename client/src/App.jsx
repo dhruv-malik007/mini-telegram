@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteConversationAsAdmin, deleteUser, setUserAdmin } from './api';
+import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteConversationAsAdmin, deleteUser, setUserAdmin, getVapidPublic, subscribePush } from './api';
 import { getSocketUrl } from './config';
 import Login from './Login';
 import ChatList from './ChatList';
@@ -22,6 +22,7 @@ function App() {
   const [lastReadByOther, setLastReadByOther] = useState(0);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [profileAbout, setProfileAbout] = useState('');
+  const [pushStatus, setPushStatus] = useState(null); // null | 'enabled' | 'unsupported' | 'denied' | 'error'
 
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_KEY);
@@ -92,35 +93,78 @@ function App() {
     setAuth(null);
     setSelectedUserId(null);
     setMessages([]);
+    setPushStatus(null);
     localStorage.removeItem(AUTH_KEY);
   }, []);
+
+  const handleEnablePush = useCallback(async () => {
+    if (!auth) return;
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setPushStatus('unsupported');
+        return;
+      }
+      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushStatus('denied');
+        return;
+      }
+      const publicKey = await getVapidPublic();
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey,
+      });
+      await subscribePush(sub.toJSON());
+      setPushStatus('enabled');
+    } catch (e) {
+      setPushStatus('error');
+      console.error('Push registration failed', e);
+    }
+  }, [auth]);
 
   const handleNewMessage = useCallback((msg) => {
     setMessages((prev) => {
       const fromMe = msg.sender_id === auth?.user?.id;
-      const withoutPending = fromMe ? prev.filter((m) => !m.pending) : prev;
-      const next = [...withoutPending, msg];
+      if (fromMe) {
+        const pendingIdx = prev.findIndex((m) => m.pending);
+        if (pendingIdx >= 0) {
+          const next = prev.slice();
+          next[pendingIdx] = msg;
+          next.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+          return next;
+        }
+      }
+      const next = [...prev, msg];
       next.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
       return next;
     });
   }, [auth?.user?.id]);
 
-  const handleSendMessage = useCallback((content, replyToId) => {
+  const handleSendMessage = useCallback((content, replyToId, attachment) => {
     if (!socket || !selectedUserId || !auth?.user) return;
     const tempId = `temp-${Date.now()}`;
     const optimistic = {
       id: tempId,
       sender_id: auth.user.id,
       recipient_id: selectedUserId,
-      content,
+      content: content || '',
       created_at: Math.floor(Date.now() / 1000),
       reply_to_id: replyToId ?? null,
       edited_at: null,
       deleted_at: null,
+      attachment_type: attachment?.type ?? null,
+      attachment_url: attachment?.url ?? null,
       pending: true,
     };
     setMessages((prev) => [...prev, optimistic]);
-    socket.emit('send_message', { recipientId: selectedUserId, content, replyToId: replyToId || undefined });
+    socket.emit('send_message', {
+      recipientId: selectedUserId,
+      content,
+      replyToId: replyToId || undefined,
+      attachmentUrl: attachment?.url,
+      attachmentType: attachment?.type,
+    });
   }, [socket, selectedUserId, auth?.user]);
 
   const handleMessageUpdated = useCallback((updated) => {
@@ -219,6 +263,12 @@ function App() {
             ✎
           </button>
         </div>
+        {pushStatus !== 'enabled' && (
+          <button type="button" className="sidebar-push-btn" onClick={handleEnablePush} title="Get notified of new messages">
+            Enable notifications
+          </button>
+        )}
+        {pushStatus === 'enabled' && <span className="sidebar-push-status">Notifications on</span>}
       </aside>
       {showProfileEdit && (
         <div className="profile-modal-overlay" onClick={() => setShowProfileEdit(false)}>

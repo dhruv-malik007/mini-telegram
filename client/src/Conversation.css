@@ -369,6 +369,47 @@
   text-decoration: underline;
 }
 
+.message-attachment {
+  margin-bottom: 0.35rem;
+}
+
+.message-attachment-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.message--incoming .message-attachment-link {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.message-attachment-link:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.message--incoming .message-attachment-link:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.message-attachment-icon {
+  font-size: 1rem;
+}
+
+.message-attachment-label {
+  font-weight: 500;
+}
+
+.message-attachment-hint {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
 .message-date-sep {
   text-align: center;
   font-size: 0.75rem;
@@ -574,12 +615,86 @@
   padding: 0.6rem 1rem 1rem;
   border-top: 1px solid var(--border);
   display: flex;
-  gap: 0.6rem;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.4rem;
   background: var(--bg-panel);
   max-width: 720px;
   margin: 0 auto;
   width: 100%;
+}
+
+.conversation-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.conversation-attachment-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.conversation-attachment-preview-label {
+  flex: 1;
+}
+
+.conversation-attachment-preview-remove {
+  padding: 0.2rem 0.5rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.conversation-attachment-preview-remove:hover {
+  background: var(--border);
+}
+
+.conversation-upload-error {
+  font-size: 0.8rem;
+  color: var(--error, #c00);
+}
+
+.conversation-form-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.conversation-attach {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conversation-attach:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+.conversation-attach:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .conversation-input {

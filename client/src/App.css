@@ -166,6 +166,30 @@
   color: var(--text);
 }
 
+.sidebar-push-btn {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  width: 100%;
+  font-size: 0.8rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sidebar-push-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.sidebar-push-status {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .profile-modal-overlay {
   position: fixed;
   inset: 0;

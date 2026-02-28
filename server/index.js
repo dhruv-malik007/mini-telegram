@@ -1,4 +1,24 @@
 require('dotenv').config();
+
+// Polyfill for megajs: it uses globalThis.crypto.getRandomValues (and .subtle); Node may not expose it
+const nodeCrypto = require('crypto');
+if (!globalThis.crypto || typeof globalThis.crypto.getRandomValues !== 'function') {
+  const webcrypto = nodeCrypto.webcrypto;
+  if (webcrypto && typeof webcrypto.getRandomValues === 'function') {
+    globalThis.crypto = webcrypto;
+  } else {
+    globalThis.crypto = {
+      getRandomValues(arr) {
+        nodeCrypto.randomFillSync(arr);
+        return arr;
+      },
+    };
+  }
+}
+if (globalThis.crypto && !globalThis.crypto.subtle && nodeCrypto.webcrypto?.subtle) {
+  globalThis.crypto.subtle = nodeCrypto.webcrypto.subtle;
+}
+
 const express = require('express');
 const path = require('path');
 const { createServer } = require('http');
@@ -6,8 +26,11 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
+const multer = require('multer');
+const webPush = require('web-push');
 const db = require('./db');
 const { signToken, verifyToken, authMiddleware, requireAdmin } = require('./auth');
+const mega = require('./mega');
 
 const app = express();
 const httpServer = createServer(app);
@@ -18,6 +41,21 @@ const io = new Server(httpServer, {
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\//.test(file.mimetype) || /^video\//.test(file.mimetype);
+    cb(ok ? null : new Error('Only images and videos allowed'), ok);
+  },
+});
+
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC;
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE;
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webPush.setVapidDetails('mailto:mini-telegram@local', VAPID_PUBLIC, VAPID_PRIVATE);
+}
 
 const PORT = process.env.PORT || 3001;
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
@@ -31,6 +69,28 @@ function now() {
 
 async function updateLastSeen(userId) {
   await db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), userId);
+}
+
+async function sendPushToUser(userId, payload) {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+  const subs = await db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?').all(userId);
+  const body = JSON.stringify(payload);
+  await Promise.all(
+    (subs || []).map(async (sub) => {
+      try {
+        await webPush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          body,
+          { TTL: 86400 }
+        );
+      } catch (e) {
+        if (e.statusCode === 410 || e.statusCode === 404) {
+          await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(sub.endpoint);
+        }
+        throw e;
+      }
+    })
+  );
 }
 
 // --- REST API ---
@@ -126,6 +186,55 @@ app.patch('/api/me', authMiddleware, async (req, res) => {
   }
 });
 
+// Register push subscription for the current user
+app.post('/api/push/subscribe', authMiddleware, async (req, res) => {
+  const { subscription } = req.body || {};
+  if (!subscription || !subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    return res.status(400).json({ error: 'Invalid subscription (endpoint, keys.p256dh, keys.auth required)' });
+  }
+  try {
+    await db.prepare(
+      'INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).run(req.userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, now());
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/push/vapid-public', (req, res) => {
+  if (!VAPID_PUBLIC) return res.status(503).json({ error: 'Push not configured (set VAPID keys)' });
+  res.json({ publicKey: VAPID_PUBLIC });
+});
+
+// Upload photo/video to MEGA data lake (returns { url, type } for use in messages)
+app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  if (!mega.isEnabled()) {
+    return res.status(503).json({ error: 'Media upload not configured (set MEGA_EMAIL and MEGA_PASSWORD)' });
+  }
+  try {
+    // Ensure crypto is available for megajs (can be undefined in some Node/worker contexts)
+    if (!globalThis.crypto?.getRandomValues) {
+      const c = require('crypto');
+      globalThis.crypto = c.webcrypto || {
+        getRandomValues(arr) {
+          c.randomFillSync(arr);
+          return arr;
+        },
+      };
+      if (!globalThis.crypto.subtle && c.webcrypto?.subtle) globalThis.crypto.subtle = c.webcrypto.subtle;
+    }
+    const type = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
+    const { url } = await mega.uploadBuffer(req.file.buffer, req.file.originalname || 'file');
+    res.json({ url, type });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Upload failed' });
+  }
+});
+
 // Protected routes — list users with last_seen_at, about, unread_count (single unread query)
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
@@ -163,14 +272,20 @@ app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
   try {
     await updateLastSeen(userId);
     const messages = await db.prepare(`
-      SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at
+      SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
       FROM messages m
       LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
       WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
         AND h.message_id IS NULL
       ORDER BY m.created_at ASC
     `).all(userId, userId, otherId, otherId, userId);
-    const filtered = messages.filter((m) => !m.deleted_at).map(({ deleted_at, ...m }) => ({ ...m, reply_to_id: m.reply_to_id ?? null, edited_at: m.edited_at ?? null }));
+    const filtered = messages.filter((m) => !m.deleted_at).map(({ deleted_at, ...m }) => ({
+      ...m,
+      reply_to_id: m.reply_to_id ?? null,
+      edited_at: m.edited_at ?? null,
+      attachment_type: m.attachment_type ?? null,
+      attachment_url: m.attachment_url ?? null,
+    }));
     const maxId = filtered.length ? Math.max(...filtered.map((m) => m.id)) : 0;
     const n = now();
     const upsertReceipt = db.prepare(`
@@ -234,7 +349,7 @@ app.patch('/api/messages/:id', authMiddleware, async (req, res) => {
     if (row.sender_id !== userId) return res.status(403).json({ error: 'not your message' });
     if (now() - row.created_at > EDIT_WINDOW_SECONDS) return res.status(400).json({ error: 'edit window expired (15 min)' });
     await db.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?').run(trimmed, now(), id);
-    const updated = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at FROM messages WHERE id = ?').get(id);
+    const updated = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at, attachment_type, attachment_url FROM messages WHERE id = ?').get(id);
     [updated.sender_id, updated.recipient_id].forEach((uid) => {
       const socks = onlineByUserId.get(uid);
       if (socks) socks.forEach((sid) => io.to(sid).emit('message_updated', updated));
@@ -379,20 +494,29 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async (payload) => {
-    const { recipientId, content, replyToId } = payload || {};
-    if (typeof recipientId !== 'number' || typeof content !== 'string' || !socket.userId) return;
-    const trimmed = content.trim().slice(0, 10000);
-    if (!trimmed) return;
+    const { recipientId, content, replyToId, attachmentUrl, attachmentType } = payload || {};
+    if (typeof recipientId !== 'number' || !socket.userId) return;
+    const trimmed = (typeof content === 'string' ? content : '').trim().slice(0, 10000);
+    const attUrl = typeof attachmentUrl === 'string' && attachmentUrl.length > 0 ? attachmentUrl.slice(0, 2048) : null;
+    const attType = attachmentType === 'image' || attachmentType === 'video' ? attachmentType : null;
+    if (!trimmed && !attUrl) return;
     const replyTo = replyToId != null ? parseInt(replyToId, 10) : null;
     try {
-      const stmt = db.prepare('INSERT INTO messages (sender_id, recipient_id, content, reply_to_id) VALUES (?, ?, ?, ?)');
-      const result = await stmt.run(socket.userId, recipientId, trimmed, replyTo && !isNaN(replyTo) ? replyTo : null);
-      const row = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at FROM messages WHERE id = ?').get(result.lastInsertRowid);
+      const stmt = db.prepare('INSERT INTO messages (sender_id, recipient_id, content, reply_to_id, attachment_type, attachment_url) VALUES (?, ?, ?, ?, ?, ?)');
+      const result = await stmt.run(socket.userId, recipientId, trimmed || '', replyTo && !isNaN(replyTo) ? replyTo : null, attType, attUrl);
+      const row = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at, attachment_type, attachment_url FROM messages WHERE id = ?').get(result.lastInsertRowid);
       await updateLastSeen(socket.userId);
       socket.emit('new_message', row);
       const recipientSockets = onlineByUserId.get(recipientId);
       if (recipientSockets) {
         recipientSockets.forEach((sid) => io.to(sid).emit('new_message', row));
+      }
+      if (VAPID_PUBLIC && VAPID_PRIVATE && row.recipient_id) {
+        sendPushToUser(row.recipient_id, {
+          title: 'New message',
+          body: trimmed ? trimmed.slice(0, 80) : (row.attachment_type === 'image' ? 'Photo' : row.attachment_type === 'video' ? 'Video' : 'Attachment'),
+          tag: `msg-${row.id}`,
+        }).catch(() => {});
       }
     } catch (e) {
       socket.emit('error', { message: e.message });

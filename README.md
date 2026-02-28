@@ -92,6 +92,29 @@ Use [Turso](https://turso.tech) for a free, hosted SQLite database so messages p
 
 If both are set, the server uses Turso instead of local `data/app.db`. No code changes needed.
 
+### Optional: MEGA cloud (photos & videos)
+
+To let users share photos and videos in chat, use [MEGA](https://mega.io) as a data lake. Files are uploaded to your MEGA account and shared via public links.
+
+1. Create a MEGA account.
+2. Set in `.env` (or your host’s environment):
+   - `MEGA_EMAIL` = your MEGA email
+   - `MEGA_PASSWORD` = your MEGA password
+
+If both are set, the **Attach** button (⊕) in the conversation lets users send images and videos (stored on MEGA, linked in messages). If not set, the attach button will show “Media upload not configured”.
+
+### Optional: Push notifications
+
+To send browser push notifications when the user gets a new message:
+
+1. Generate VAPID keys (one-time):  
+   `npx web-push generate-vapid-keys`
+2. Set in `.env` (or your host’s environment):
+   - `VAPID_PUBLIC_KEY` or `VAPID_PUBLIC` = the public key
+   - `VAPID_PRIVATE_KEY` or `VAPID_PRIVATE` = the private key
+
+If both are set, users can click **Enable notifications** in the sidebar to receive push notifications when they’re not in the app.
+
 ---
 
 ## Create the Android app

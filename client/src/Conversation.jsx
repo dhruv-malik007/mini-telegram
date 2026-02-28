@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { editMessage, deleteMessage, hideMessage } from './api';
+import { editMessage, deleteMessage, hideMessage, uploadMedia } from './api';
 import './Conversation.css';
 
 function formatDateKey(ts) {
@@ -48,6 +48,19 @@ function parseContentWithReels(content) {
     parts.push({ type: 'text', value: content.slice(lastIndex) });
   }
   return parts.length ? parts : [{ type: 'text', value: content }];
+}
+
+function MessageAttachment({ type, url, isOutgoing }) {
+  const label = type === 'video' ? 'Video' : 'Photo';
+  return (
+    <div className={`message-attachment message-attachment--${type || 'image'} ${isOutgoing ? 'message-attachment--outgoing' : ''}`}>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="message-attachment-link">
+        <span className="message-attachment-icon" aria-hidden>{type === 'video' ? '▶' : '🖼'}</span>
+        <span className="message-attachment-label">{label}</span>
+        <span className="message-attachment-hint">Open / Download</span>
+      </a>
+    </div>
+  );
 }
 
 function ReelCard({ url, reelId, isOutgoing, onPlayInApp, isPost }) {
@@ -148,6 +161,10 @@ export default function Conversation({
   const [input, setInput] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
   const [reelViewUrl, setReelViewUrl] = useState(null);
+  const [attachment, setAttachment] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const fileInputRef = useRef(null);
   const [otherTyping, setOtherTyping] = useState(false);
   const [menuMessageId, setMenuMessageId] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -244,11 +261,29 @@ export default function Conversation({
   const handleSubmit = (e) => {
     e.preventDefault();
     const text = input.trim();
-    if (!text) return;
-    onSendMessage(text, replyingTo?.id);
+    if (!text && !attachment) return;
+    onSendMessage(text || '', replyingTo?.id, attachment || undefined);
     setInput('');
     setReplyingTo(null);
+    setAttachment(null);
+    setUploadError(null);
   };
+
+  const handleFileChange = useCallback(async (e) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const { url, type } = await uploadMedia(file);
+      setAttachment({ url, type });
+    } catch (err) {
+      setUploadError(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, []);
 
   const getReplyMessage = (replyToId) => messages.find((m) => m.id === replyToId);
 
@@ -406,6 +441,9 @@ export default function Conversation({
                   ) : (
                     <>
                       <div className="message-content">
+                        {msg.attachment_url && (
+                          <MessageAttachment type={msg.attachment_type} url={msg.attachment_url} isOutgoing={isOutgoing} />
+                        )}
                         {parseContentWithReels(msg.content).map((part, i) =>
                           part.type === 'text' ? (
                             <span key={i}>{part.value}</span>
@@ -461,16 +499,36 @@ export default function Conversation({
 
       <form className="conversation-form" onSubmit={handleSubmit}>
         <input
-          type="text"
-          placeholder="Type a message..."
-          value={input}
-          onChange={handleInputChange}
-          className="conversation-input"
-          maxLength={10000}
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          onChange={handleFileChange}
+          className="conversation-file-input"
+          aria-label="Attach photo or video"
         />
-        <button type="submit" className="conversation-send" disabled={!input.trim()} aria-label="Send">
-          <span className="conversation-send-icon">↑</span>
-        </button>
+        {attachment && (
+          <div className="conversation-attachment-preview">
+            <span className="conversation-attachment-preview-label">{attachment.type === 'video' ? 'Video' : 'Photo'} attached</span>
+            <button type="button" className="conversation-attachment-preview-remove" onClick={() => { setAttachment(null); setUploadError(null); }} aria-label="Remove attachment">×</button>
+          </div>
+        )}
+        {uploadError && <span className="conversation-upload-error">{uploadError}</span>}
+        <div className="conversation-form-row">
+          <button type="button" className="conversation-attach" onClick={() => fileInputRef.current?.click()} disabled={uploading} aria-label="Attach file" title="Photo or video">
+            {uploading ? '…' : '⊕'}
+          </button>
+          <input
+            type="text"
+            placeholder="Type a message..."
+            value={input}
+            onChange={handleInputChange}
+            className="conversation-input"
+            maxLength={10000}
+          />
+          <button type="submit" className="conversation-send" disabled={(!input.trim() && !attachment) || uploading} aria-label="Send">
+            <span className="conversation-send-icon">↑</span>
+          </button>
+        </div>
       </form>
     </div>
   );
