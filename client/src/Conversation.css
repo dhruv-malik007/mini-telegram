@@ -294,6 +294,81 @@
   align-self: flex-start;
 }
 
+.message-reel-card {
+  display: block;
+  margin-top: 0.5rem;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  max-width: 260px;
+}
+
+.message-reel-card--outgoing {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.message-reel-card-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.message-reel-card-inner:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.message-reel-card-inner:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.message-reel-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.message-reel-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.message-reel-card-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.message-reel-card-hint {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.message-reel-card-external {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.message-reel-card-external:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .message-date-sep {
   text-align: center;
   font-size: 0.75rem;
@@ -556,4 +631,91 @@
   display: block;
   line-height: 1;
   transform: rotate(-90deg);
+}
+
+/* Reel in-app modal (Instagram official embed) */
+.reel-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.reel-modal {
+  background: var(--bg-panel);
+  border-radius: 12px;
+  max-width: 540px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  position: relative;
+  padding: 2.5rem 1rem 1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.reel-modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.reel-modal-close:hover {
+  color: var(--text);
+  background: var(--bg-input);
+}
+
+.reel-modal-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.reel-modal-embed {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reel-modal-embed iframe {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.reel-modal-open-tab {
+  display: block;
+  margin-top: 1rem;
+  padding: 0.65rem 1.25rem;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.reel-modal-open-tab:hover {
+  background: var(--accent-hover);
+  color: #fff;
+  text-decoration: none;
 }

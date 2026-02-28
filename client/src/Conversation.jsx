@@ -25,6 +25,109 @@ function formatLastSeen(ts) {
 
 const EDIT_WINDOW_SEC = 15 * 60;
 
+/* Match both /reel/ID and /p/ID (posts) */
+const INSTAGRAM_REEL_REGEX = /https?:\/\/(www\.)?instagram\.com\/(reel|p)\/([A-Za-z0-9_-]+)(\/?\S*)?/gi;
+
+function parseContentWithReels(content) {
+  if (!content || typeof content !== 'string') return [{ type: 'text', value: '' }];
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  const re = new RegExp(INSTAGRAM_REEL_REGEX.source, 'gi');
+  while ((match = re.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
+    }
+    const url = match[0];
+    const kind = (match[2] || 'reel').toLowerCase(); /* 'reel' or 'p' */
+    const reelId = match[3] || '';
+    parts.push({ type: 'reel', value: url, reelId, isPost: kind === 'p' });
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', value: content.slice(lastIndex) });
+  }
+  return parts.length ? parts : [{ type: 'text', value: content }];
+}
+
+function ReelCard({ url, reelId, isOutgoing, onPlayInApp, isPost }) {
+  const openInNewTab = (e) => {
+    if (e?.metaKey || e?.ctrlKey) return;
+    e?.preventDefault();
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+  const handleClick = (e) => {
+    if (onPlayInApp) onPlayInApp(url);
+    else openInNewTab(e);
+  };
+  const label = isPost ? 'Instagram Post' : 'Instagram Reel';
+  return (
+    <div className={`message-reel-card ${isOutgoing ? 'message-reel-card--outgoing' : ''}`} role="presentation">
+      <div
+        className="message-reel-card-inner"
+        onClick={handleClick}
+        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+        tabIndex={0}
+        role="button"
+        aria-label={`Open ${label}${reelId ? ` ${reelId}` : ''}`}
+      >
+        <span className="message-reel-card-icon" aria-hidden>▶</span>
+        <div className="message-reel-card-text">
+          <span className="message-reel-card-label">{label}</span>
+          <span className="message-reel-card-hint">Tap to watch in app</span>
+        </div>
+      </div>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="message-reel-card-external" onClick={(e) => e.stopPropagation()}>
+        Open in new tab
+      </a>
+    </div>
+  );
+}
+
+function ReelModal({ url, onClose }) {
+  const containerRef = useRef(null);
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!url || !containerRef.current) return;
+    const el = containerRef.current;
+    el.innerHTML = '';
+    const blockquote = document.createElement('blockquote');
+    blockquote.className = 'instagram-media';
+    blockquote.setAttribute('data-instgrm-permalink', url.replace(/\/?$/, '/'));
+    blockquote.setAttribute('data-instgrm-version', '14');
+    el.appendChild(blockquote);
+
+    if (window.instgrm) {
+      window.instgrm.Embeds.process();
+      return;
+    }
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = '//www.instagram.com/embed.js';
+    script.onload = () => { if (window.instgrm) window.instgrm.Embeds.process(); };
+    document.body.appendChild(script);
+    return () => { loadedRef.current = false; };
+  }, [url]);
+
+  return (
+    <div className="reel-modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Instagram Reel">
+      <div className="reel-modal" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="reel-modal-close" onClick={onClose} aria-label="Close">×</button>
+        <p className="reel-modal-note">
+          Instagram only allows a preview here. To watch the video, open it on Instagram.
+        </p>
+        <div className="reel-modal-embed" ref={containerRef} />
+        <a href={url} target="_blank" rel="noopener noreferrer" className="reel-modal-open-tab">
+          Open on Instagram
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export default function Conversation({
   currentUser,
   otherUser,
@@ -44,6 +147,7 @@ export default function Conversation({
 }) {
   const [input, setInput] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
+  const [reelViewUrl, setReelViewUrl] = useState(null);
   const [otherTyping, setOtherTyping] = useState(false);
   const [menuMessageId, setMenuMessageId] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -301,7 +405,15 @@ export default function Conversation({
                     </div>
                   ) : (
                     <>
-                      <span className="message-content">{msg.content}</span>
+                      <div className="message-content">
+                        {parseContentWithReels(msg.content).map((part, i) =>
+                          part.type === 'text' ? (
+                            <span key={i}>{part.value}</span>
+                          ) : (
+                            <ReelCard key={i} url={part.value} reelId={part.reelId} isOutgoing={isOutgoing} onPlayInApp={setReelViewUrl} isPost={part.isPost} />
+                          )
+                        )}
+                      </div>
                       <span className="message-meta">
                         <span className="message-time">
                           {msg.created_at && new Date(msg.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -341,6 +453,10 @@ export default function Conversation({
           <span className="conversation-reply-preview">Replying to {(replyingTo.sender_id === currentUser.id ? 'yourself' : (otherUser.display_name || otherUser.username))}: {replyingTo.content?.slice(0, 40)}…</span>
           <button type="button" className="conversation-reply-cancel" onClick={() => setReplyingTo(null)} aria-label="Cancel reply">×</button>
         </div>
+      )}
+
+      {reelViewUrl && (
+        <ReelModal url={reelViewUrl} onClose={() => setReelViewUrl(null)} />
       )}
 
       <form className="conversation-form" onSubmit={handleSubmit}>
