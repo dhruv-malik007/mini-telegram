@@ -92,16 +92,18 @@ Use [Turso](https://turso.tech) for a free, hosted SQLite database so messages p
 
 If both are set, the server uses Turso instead of local `data/app.db`. No code changes needed.
 
-### Optional: MEGA cloud (photos & videos)
+### Optional: Cloudinary (photos & videos)
 
-To let users share photos and videos in chat, use [MEGA](https://mega.io) as a data lake. Files are uploaded to your MEGA account and shared via public links.
+To let users share photos and videos in chat, use [Cloudinary](https://cloudinary.com) as a data lake. Files are uploaded and shared via public URLs stored in the database.
 
-1. Create a MEGA account.
-2. Set in `.env` (or your host’s environment):
-   - `MEGA_EMAIL` = your MEGA email
-   - `MEGA_PASSWORD` = your MEGA password
+1. Sign up at [cloudinary.com](https://cloudinary.com) (free tier available).
+2. In [Dashboard](https://console.cloudinary.com), copy your **Cloud name**, **API Key**, and **API Secret**.
+3. Set in `.env`:
+   - `CLOUDINARY_CLOUD_NAME` = your cloud name
+   - `CLOUDINARY_API_KEY` = your API key
+   - `CLOUDINARY_API_SECRET` = your API secret
 
-If both are set, the **Attach** button (⊕) in the conversation lets users send images and videos (stored on MEGA, linked in messages). If not set, the attach button will show “Media upload not configured”.
+If configured, the **Attach** button (⊕) lets users send images and videos. The share link is stored in the DB; recipients see inline image previews.
 
 ### Optional: Push notifications
 

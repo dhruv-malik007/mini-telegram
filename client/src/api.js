@@ -54,8 +54,11 @@ export async function login(username, password) {
   return data;
 }
 
-export async function getConversation(otherId) {
-  const res = await fetch(getApiUrl(`/api/conversation/${otherId}`), { headers: authHeaders() });
+export async function getConversation(otherId, opts = {}) {
+  const params = new URLSearchParams();
+  if (opts.beforeId != null) params.set('beforeId', opts.beforeId);
+  const url = `/api/conversation/${otherId}` + (params.toString() ? `?${params}` : '');
+  const res = await fetch(getApiUrl(url), { headers: authHeaders() });
   if (res.status === 401) {
     const e = new Error('Unauthorized');
     e.status = 401;

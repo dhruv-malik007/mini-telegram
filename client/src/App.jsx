@@ -20,6 +20,7 @@ function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
   const [lastReadByOther, setLastReadByOther] = useState(0);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [profileAbout, setProfileAbout] = useState('');
   const [pushStatus, setPushStatus] = useState(null); // null | 'enabled' | 'unsupported' | 'denied' | 'error'
@@ -64,15 +65,30 @@ function App() {
   const loadConversation = useCallback(async (otherId) => {
     if (!auth) return;
     setSelectedUserId(otherId);
+    setHasMoreMessages(false);
     try {
-      const { messages: list, lastReadByOther: read } = await getConversation(otherId);
-      setMessages(list);
+      const { messages: list, lastReadByOther: read, hasMore } = await getConversation(otherId);
+      setMessages(list ?? []);
       setLastReadByOther(read ?? 0);
+      setHasMoreMessages(hasMore ?? false);
       getUsers().then(setUsers).catch(() => {});
     } catch (err) {
       if (err.status === 401) setAuth(null);
       else setMessages([]);
     }
+  }, [auth]);
+
+  const loadMoreMessages = useCallback(async (otherId, beforeId) => {
+    if (!auth || !beforeId) return;
+    try {
+      const { messages: older, hasMore } = await getConversation(otherId, { beforeId });
+      setMessages((prev) => {
+        const ids = new Set(prev.map((m) => m.id));
+        const newOnes = (older ?? []).filter((m) => !ids.has(m.id));
+        return [...newOnes, ...prev].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+      });
+      setHasMoreMessages(hasMore ?? false);
+    } catch (_) {}
   }, [auth]);
 
   const handleLogin = useCallback(async (username, password) => {
@@ -298,6 +314,8 @@ function App() {
             otherUser={otherUser}
             messages={messages}
             lastReadByOther={lastReadByOther}
+            hasMoreMessages={hasMoreMessages}
+            onLoadMore={loadMoreMessages}
             onlineUserIds={onlineUserIds}
             onBack={() => setSelectedUserId(null)}
             onNewMessage={handleNewMessage}

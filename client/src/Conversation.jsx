@@ -50,15 +50,31 @@ function parseContentWithReels(content) {
   return parts.length ? parts : [{ type: 'text', value: content }];
 }
 
-function MessageAttachment({ type, url, isOutgoing }) {
+function MessageAttachment({ type, url, isOutgoing, onImageClick }) {
   const label = type === 'video' ? 'Video' : 'Photo';
+  const isImage = type === 'image';
   return (
     <div className={`message-attachment message-attachment--${type || 'image'} ${isOutgoing ? 'message-attachment--outgoing' : ''}`}>
-      <a href={url} target="_blank" rel="noopener noreferrer" className="message-attachment-link">
-        <span className="message-attachment-icon" aria-hidden>{type === 'video' ? '▶' : '🖼'}</span>
-        <span className="message-attachment-label">{label}</span>
-        <span className="message-attachment-hint">Open / Download</span>
-      </a>
+      {isImage && url ? (
+        <>
+          <img
+            src={url}
+            alt=""
+            className="message-attachment-media"
+            loading="lazy"
+            onClick={() => (onImageClick ? onImageClick(url) : window.open(url, '_blank'))}
+          />
+          <a href={url} target="_blank" rel="noopener noreferrer" className="message-attachment-download" onClick={(e) => e.stopPropagation()}>
+            Open / Download
+          </a>
+        </>
+      ) : (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="message-attachment-link">
+          <span className="message-attachment-icon" aria-hidden>{type === 'video' ? '▶' : '🖼'}</span>
+          <span className="message-attachment-label">{label}</span>
+          <span className="message-attachment-hint">Open / Download</span>
+        </a>
+      )}
     </div>
   );
 }
@@ -146,6 +162,8 @@ export default function Conversation({
   otherUser,
   messages,
   lastReadByOther,
+  hasMoreMessages,
+  onLoadMore,
   onlineUserIds,
   onBack,
   onNewMessage,
@@ -161,6 +179,7 @@ export default function Conversation({
   const [input, setInput] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
   const [reelViewUrl, setReelViewUrl] = useState(null);
+  const [lightboxImageUrl, setLightboxImageUrl] = useState(null);
   const [attachment, setAttachment] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -169,7 +188,9 @@ export default function Conversation({
   const [menuMessageId, setMenuMessageId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editContent, setEditContent] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef(null);
+  const loadMoreRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const emitTypingRef = useRef(null);
 
@@ -233,6 +254,27 @@ export default function Conversation({
       if (emitTypingRef.current) clearTimeout(emitTypingRef.current);
     };
   }, []);
+
+  const handleLoadMore = useCallback(() => {
+    if (!otherUser || !onLoadMore || !hasMoreMessages || loadingMore || !messages.length) return;
+    const oldestId = messages.reduce((min, m) => (typeof m.id === 'number' && (!min || m.id < min) ? m.id : min), null);
+    if (oldestId == null) return;
+    setLoadingMore(true);
+    onLoadMore(otherUser.id, oldestId).finally(() => setLoadingMore(false));
+  }, [otherUser, onLoadMore, hasMoreMessages, loadingMore, messages]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || !hasMoreMessages || !onLoadMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loadingMore) handleLoadMore();
+      },
+      { root: listRef.current, rootMargin: '100px', threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreMessages, onLoadMore, loadingMore, handleLoadMore]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -387,6 +429,13 @@ export default function Conversation({
       </header>
 
       <div className="conversation-messages" ref={listRef}>
+        {hasMoreMessages && (
+          <div ref={loadMoreRef} className="conversation-load-more">
+            <button type="button" className="conversation-load-more-btn" onClick={handleLoadMore} disabled={loadingMore}>
+              {loadingMore ? 'Loading…' : 'Load older messages'}
+            </button>
+          </div>
+        )}
         {otherTyping && (
           <div className="conversation-typing">
             <span className="conversation-typing-dots" />
@@ -442,7 +491,12 @@ export default function Conversation({
                     <>
                       <div className="message-content">
                         {msg.attachment_url && (
-                          <MessageAttachment type={msg.attachment_type} url={msg.attachment_url} isOutgoing={isOutgoing} />
+                          <MessageAttachment
+                            type={msg.attachment_type}
+                            url={msg.attachment_url}
+                            isOutgoing={isOutgoing}
+                            onImageClick={setLightboxImageUrl}
+                          />
                         )}
                         {parseContentWithReels(msg.content).map((part, i) =>
                           part.type === 'text' ? (
@@ -495,6 +549,16 @@ export default function Conversation({
 
       {reelViewUrl && (
         <ReelModal url={reelViewUrl} onClose={() => setReelViewUrl(null)} />
+      )}
+
+      {lightboxImageUrl && (
+        <div className="lightbox-overlay" onClick={() => setLightboxImageUrl(null)} role="dialog" aria-label="Image preview">
+          <button type="button" className="lightbox-close" onClick={() => setLightboxImageUrl(null)} aria-label="Close">×</button>
+          <img src={lightboxImageUrl} alt="" className="lightbox-image" onClick={(e) => e.stopPropagation()} />
+          <a href={lightboxImageUrl} target="_blank" rel="noopener noreferrer" className="lightbox-download" onClick={(e) => e.stopPropagation()}>
+            Open / Download
+          </a>
+        </div>
       )}
 
       <form className="conversation-form" onSubmit={handleSubmit}>

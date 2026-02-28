@@ -1,24 +1,5 @@
 require('dotenv').config();
 
-// Polyfill for megajs: it uses globalThis.crypto.getRandomValues (and .subtle); Node may not expose it
-const nodeCrypto = require('crypto');
-if (!globalThis.crypto || typeof globalThis.crypto.getRandomValues !== 'function') {
-  const webcrypto = nodeCrypto.webcrypto;
-  if (webcrypto && typeof webcrypto.getRandomValues === 'function') {
-    globalThis.crypto = webcrypto;
-  } else {
-    globalThis.crypto = {
-      getRandomValues(arr) {
-        nodeCrypto.randomFillSync(arr);
-        return arr;
-      },
-    };
-  }
-}
-if (globalThis.crypto && !globalThis.crypto.subtle && nodeCrypto.webcrypto?.subtle) {
-  globalThis.crypto.subtle = nodeCrypto.webcrypto.subtle;
-}
-
 const express = require('express');
 const path = require('path');
 const { createServer } = require('http');
@@ -30,7 +11,8 @@ const multer = require('multer');
 const webPush = require('web-push');
 const db = require('./db');
 const { signToken, verifyToken, authMiddleware, requireAdmin } = require('./auth');
-const mega = require('./mega');
+const cloudinary = require('./cloudinary');
+const cache = require('./cache');
 
 const app = express();
 const httpServer = createServer(app);
@@ -63,8 +45,22 @@ const hasClientBuild = fs.existsSync(clientDist);
 const SALT_ROUNDS = 10;
 const EDIT_WINDOW_SECONDS = 15 * 60; // 15 minutes
 
+const MESSAGE_PAGE_SIZE = 50;
+
 function now() {
   return Math.floor(Date.now() / 1000);
+}
+
+function normalizeMessage(row) {
+  if (!row || row.deleted_at) return null;
+  const { deleted_at, ...m } = row;
+  return {
+    ...m,
+    reply_to_id: m.reply_to_id ?? null,
+    edited_at: m.edited_at ?? null,
+    attachment_type: m.attachment_type ?? null,
+    attachment_url: m.attachment_url ?? null,
+  };
 }
 
 async function updateLastSeen(userId) {
@@ -141,20 +137,25 @@ app.post('/api/login', async (req, res) => {
   res.json({ user, token });
 });
 
-// Current user (for refresh / is_admin, about, last_seen)
+// Current user (for refresh / is_admin, about, last_seen) — cached 10s
 app.get('/api/me', authMiddleware, async (req, res) => {
+  const cacheKey = `me:${req.userId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
   try {
     await updateLastSeen(req.userId);
     const row = await db.prepare('SELECT id, username, display_name, is_admin, about, last_seen_at FROM users WHERE id = ?').get(req.userId);
     if (!row) return res.status(404).json({ error: 'User not found' });
-    res.json({
+    const data = {
       id: row.id,
       username: row.username,
       display_name: row.display_name,
       is_admin: !!row.is_admin,
       about: row.about || '',
       last_seen_at: row.last_seen_at ?? null,
-    });
+    };
+    cache.set(cacheKey, data, 10);
+    res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -172,6 +173,7 @@ app.patch('/api/me', authMiddleware, async (req, res) => {
       const val = String(display_name).trim().slice(0, 100);
       await db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(val || null, req.userId);
     }
+    cache.invalidateUser(req.userId);
     const row = await db.prepare('SELECT id, username, display_name, is_admin, about, last_seen_at FROM users WHERE id = ?').get(req.userId);
     res.json({
       id: row.id,
@@ -204,39 +206,36 @@ app.post('/api/push/subscribe', authMiddleware, async (req, res) => {
 
 app.get('/api/push/vapid-public', (req, res) => {
   if (!VAPID_PUBLIC) return res.status(503).json({ error: 'Push not configured (set VAPID keys)' });
-  res.json({ publicKey: VAPID_PUBLIC });
+  const cached = cache.get('vapid');
+  if (cached) return res.json(cached);
+  const data = { publicKey: VAPID_PUBLIC };
+  cache.set('vapid', data, 3600); // 1 hour
+  res.json(data);
 });
 
-// Upload photo/video to MEGA data lake (returns { url, type } for use in messages)
+// Upload photo/video to Cloudinary. Returns { url, type }.
+// Client sends this url in the message (attachment_url); we store it in DB and use it in chat.
 app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file || !req.file.buffer) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  if (!mega.isEnabled()) {
-    return res.status(503).json({ error: 'Media upload not configured (set MEGA_EMAIL and MEGA_PASSWORD)' });
+  if (!cloudinary.isEnabled()) {
+    return res.status(503).json({ error: 'Media upload not configured (set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)' });
   }
   try {
-    // Ensure crypto is available for megajs (can be undefined in some Node/worker contexts)
-    if (!globalThis.crypto?.getRandomValues) {
-      const c = require('crypto');
-      globalThis.crypto = c.webcrypto || {
-        getRandomValues(arr) {
-          c.randomFillSync(arr);
-          return arr;
-        },
-      };
-      if (!globalThis.crypto.subtle && c.webcrypto?.subtle) globalThis.crypto.subtle = c.webcrypto.subtle;
-    }
     const type = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
-    const { url } = await mega.uploadBuffer(req.file.buffer, req.file.originalname || 'file');
+    const { url } = await cloudinary.uploadBuffer(req.file.buffer, req.file.originalname || 'file', req.file.mimetype);
     res.json({ url, type });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Upload failed' });
   }
 });
 
-// Protected routes — list users with last_seen_at, about, unread_count (single unread query)
+// Protected routes — list users with last_seen_at, about, unread_count — cached 10s
 app.get('/api/users', authMiddleware, async (req, res) => {
+  const cacheKey = `users:${req.userId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
   try {
     await updateLastSeen(req.userId);
     const users = await db.prepare('SELECT id, username, display_name, about, last_seen_at FROM users WHERE id != ? ORDER BY username').all(req.userId);
@@ -257,6 +256,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
       last_seen_at: u.last_seen_at ?? null,
       unread_count: Number(unreadMap.get(u.id) ?? 0),
     }));
+    cache.set(cacheKey, result, 10);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -266,26 +266,66 @@ app.get('/api/users', authMiddleware, async (req, res) => {
 app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
   const userId = req.userId;
   const otherId = parseInt(req.params.otherId, 10);
+  const beforeId = req.query.beforeId != null ? parseInt(req.query.beforeId, 10) : null;
   if (isNaN(otherId)) {
     return res.status(400).json({ error: 'invalid user id' });
   }
   try {
     await updateLastSeen(userId);
+
+    if (beforeId != null && !isNaN(beforeId)) {
+      // Pagination: load older messages (always from DB)
+      const older = await db.prepare(`
+        SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
+        FROM messages m
+        LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+        WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
+          AND m.id < ? AND h.message_id IS NULL
+        ORDER BY m.id DESC
+        LIMIT ?
+      `).all(userId, userId, otherId, otherId, userId, beforeId, MESSAGE_PAGE_SIZE + 1);
+      const filtered = older
+        .map((r) => normalizeMessage(r))
+        .filter(Boolean)
+        .reverse();
+      const hasMore = older.length > MESSAGE_PAGE_SIZE;
+      return res.json({ messages: filtered, hasMore, prepend: true });
+    }
+
+    // Initial load: use cache if available
+    let filtered = cache.getConvMessages(userId, otherId);
+    if (filtered) {
+      const maxId = filtered.length ? Math.max(...filtered.map((m) => m.id)) : 0;
+      const n = now();
+      const upsertReceipt = db.prepare(`
+        INSERT INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, other_user_id) DO UPDATE SET
+          last_read_message_id = max(read_receipts.last_read_message_id, excluded.last_read_message_id),
+          read_at = excluded.read_at
+      `);
+      try {
+        await upsertReceipt.run(userId, otherId, maxId, n);
+      } catch (_) {
+        await db.prepare('REPLACE INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)').run(userId, otherId, maxId, n);
+      }
+      const otherReceipt = await db.prepare('SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND other_user_id = ?').get(otherId, userId);
+      const lastReadByOther = otherReceipt?.last_read_message_id ?? 0;
+      return res.json({ messages: filtered, lastReadByOther });
+    }
+
+    // Cache miss: fetch from DB
     const messages = await db.prepare(`
       SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
       FROM messages m
       LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
       WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
         AND h.message_id IS NULL
-      ORDER BY m.created_at ASC
-    `).all(userId, userId, otherId, otherId, userId);
-    const filtered = messages.filter((m) => !m.deleted_at).map(({ deleted_at, ...m }) => ({
-      ...m,
-      reply_to_id: m.reply_to_id ?? null,
-      edited_at: m.edited_at ?? null,
-      attachment_type: m.attachment_type ?? null,
-      attachment_url: m.attachment_url ?? null,
-    }));
+      ORDER BY m.id DESC
+      LIMIT ?
+    `).all(userId, userId, otherId, otherId, userId, MESSAGE_PAGE_SIZE);
+    filtered = messages.map((r) => normalizeMessage(r)).filter(Boolean).reverse();
+    cache.setConvMessages(userId, otherId, filtered);
+
     const maxId = filtered.length ? Math.max(...filtered.map((m) => m.id)) : 0;
     const n = now();
     const upsertReceipt = db.prepare(`
@@ -301,7 +341,8 @@ app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
     }
     const otherReceipt = await db.prepare('SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND other_user_id = ?').get(otherId, userId);
     const lastReadByOther = otherReceipt?.last_read_message_id ?? 0;
-    res.json({ messages: filtered, lastReadByOther });
+    const hasMore = messages.length >= MESSAGE_PAGE_SIZE;
+    res.json({ messages: filtered, lastReadByOther, hasMore });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -350,6 +391,7 @@ app.patch('/api/messages/:id', authMiddleware, async (req, res) => {
     if (now() - row.created_at > EDIT_WINDOW_SECONDS) return res.status(400).json({ error: 'edit window expired (15 min)' });
     await db.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?').run(trimmed, now(), id);
     const updated = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at, attachment_type, attachment_url FROM messages WHERE id = ?').get(id);
+    cache.invalidateConv(updated.sender_id, updated.recipient_id);
     [updated.sender_id, updated.recipient_id].forEach((uid) => {
       const socks = onlineByUserId.get(uid);
       if (socks) socks.forEach((sid) => io.to(sid).emit('message_updated', updated));
@@ -370,6 +412,7 @@ app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'message not found' });
     if (row.sender_id !== userId) return res.status(403).json({ error: 'not your message' });
     await db.prepare('UPDATE messages SET deleted_at = ?, content = ? WHERE id = ?').run(now(), '', id);
+    cache.invalidateConv(row.sender_id, row.recipient_id);
     [row.sender_id, row.recipient_id].forEach((uid) => {
       const socks = onlineByUserId.get(uid);
       if (socks) socks.forEach((sid) => io.to(sid).emit('message_deleted', { id }));
@@ -390,6 +433,7 @@ app.post('/api/messages/:id/hide', authMiddleware, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'message not found' });
     if (row.sender_id !== userId && row.recipient_id !== userId) return res.status(403).json({ error: 'not in this conversation' });
     await db.prepare('INSERT OR IGNORE INTO message_hidden (user_id, message_id) VALUES (?, ?)').run(userId, id);
+    cache.invalidateConv(row.sender_id, row.recipient_id);
     res.json({ id, hidden: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -402,6 +446,7 @@ app.delete('/api/conversation/:otherId', authMiddleware, async (req, res) => {
   const otherId = parseInt(req.params.otherId, 10);
   if (isNaN(otherId)) return res.status(400).json({ error: 'invalid user id' });
   try {
+    cache.invalidateConv(userId, otherId);
     await db.prepare(`
       DELETE FROM messages
       WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
@@ -430,6 +475,7 @@ app.delete('/api/admin/conversation', ...adminMiddleware, async (req, res) => {
   const otherId = parseInt(req.query.otherId, 10);
   if (isNaN(userId) || isNaN(otherId)) return res.status(400).json({ error: 'invalid user ids' });
   try {
+    cache.invalidateConv(userId, otherId);
     await db.prepare(`
       DELETE FROM messages
       WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
@@ -506,7 +552,10 @@ io.on('connection', (socket) => {
       const result = await stmt.run(socket.userId, recipientId, trimmed || '', replyTo && !isNaN(replyTo) ? replyTo : null, attType, attUrl);
       const row = await db.prepare('SELECT id, sender_id, recipient_id, content, created_at, reply_to_id, edited_at, deleted_at, attachment_type, attachment_url FROM messages WHERE id = ?').get(result.lastInsertRowid);
       await updateLastSeen(socket.userId);
+      const msg = normalizeMessage(row);
+      if (msg) cache.appendConvMessage(socket.userId, recipientId, msg);
       socket.emit('new_message', row);
+      cache.invalidate(`users:${recipientId}`); // recipient's user list has new unread
       const recipientSockets = onlineByUserId.get(recipientId);
       if (recipientSockets) {
         recipientSockets.forEach((sid) => io.to(sid).emit('new_message', row));
@@ -538,6 +587,7 @@ io.on('connection', (socket) => {
       } catch (_) {
         await db.prepare('REPLACE INTO read_receipts (user_id, other_user_id, last_read_message_id, read_at) VALUES (?, ?, ?, ?)').run(socket.userId, otherUserId, mid, n);
       }
+      cache.invalidate(`users:${otherUserId}`); // other user's list shows updated read state
       const recipientSockets = onlineByUserId.get(otherUserId);
       if (recipientSockets) {
         recipientSockets.forEach((sid) => io.to(sid).emit('read_receipt', { userId: socket.userId, lastReadMessageId: mid }));
@@ -569,7 +619,18 @@ async function ensureAdminUser() {
 
 // Serve built frontend (so one server works for app + API)
 if (hasClientBuild) {
-  app.use(express.static(clientDist));
+  // Cache hashed assets (e.g. /assets/index-xxx.js) for 1 year; index.html no-cache for deploys
+  app.use(
+    express.static(clientDist, {
+      setHeaders: (res, filePath) => {
+        if (filePath.includes('/assets/') && (/\.(js|css)$/.test(filePath))) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    })
+  );
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
     res.sendFile(path.join(clientDist, 'index.html'));
