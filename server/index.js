@@ -21,7 +21,26 @@ const io = new Server(httpServer, {
   cors: { origin: true, methods: ['GET', 'POST'] },
 });
 
-app.use(cors({ origin: true, credentials: true }));
+// Optional: restrict CORS to specific origins in production (e.g. ALLOWED_ORIGINS=https://app.example.com,https://www.example.com)
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+  : null;
+app.use(cors({
+  origin: allowedOrigins
+    ? (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin))
+    : true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.use(express.json());
 
 const upload = multer({
@@ -68,6 +87,12 @@ function checkAuthRateLimit(ip) {
 
 function getClientIp(req) {
   return (req.headers['x-forwarded-for'] && req.headers['x-forwarded-for'].split(',')[0].trim()) || req.socket?.remoteAddress || 'unknown';
+}
+
+/** In production, avoid leaking internal errors (e.g. DB, paths) to the client. */
+function safeErrorMessage(e, fallback = 'Something went wrong') {
+  if (process.env.NODE_ENV !== 'production') return (e && e.message) || fallback;
+  return fallback;
 }
 
 const MESSAGE_PAGE_SIZE = 50;
@@ -147,7 +172,7 @@ app.post('/api/register', async (req, res) => {
     if (e.code === 'SQLITE_CONSTRAINT_UNIQUE' || (e.code && String(e.code).includes('CONSTRAINT') && String(e.code).includes('UNIQUE'))) {
       return res.status(409).json({ error: 'username taken' });
     }
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -198,7 +223,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
     cache.set(cacheKey, data, 10);
     res.json(data);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -225,7 +250,7 @@ app.patch('/api/me', authMiddleware, async (req, res) => {
       last_seen_at: row.last_seen_at ?? null,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -241,7 +266,7 @@ app.post('/api/push/subscribe', authMiddleware, async (req, res) => {
     ).run(req.userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, now());
     res.status(204).send();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -268,7 +293,7 @@ app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) 
     const { url } = await cloudinary.uploadBuffer(req.file.buffer, req.file.originalname || 'file', req.file.mimetype);
     res.json({ url, type });
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Upload failed' });
+    res.status(500).json({ error: safeErrorMessage(e, 'Upload failed') });
   }
 });
 
@@ -300,7 +325,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
     cache.set(cacheKey, result, 10);
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -385,7 +410,7 @@ app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
     const hasMore = messages.length >= MESSAGE_PAGE_SIZE;
     res.json({ messages: filtered, lastReadByOther, hasMore });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -413,7 +438,7 @@ app.post('/api/conversation/:otherId/read', authMiddleware, async (req, res) => 
     }
     res.status(204).send();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -439,7 +464,7 @@ app.patch('/api/messages/:id', authMiddleware, async (req, res) => {
     });
     res.json(updated);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -460,7 +485,7 @@ app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
     });
     res.json({ id, deleted: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -477,7 +502,7 @@ app.post('/api/messages/:id/hide', authMiddleware, async (req, res) => {
     cache.invalidateConv(row.sender_id, row.recipient_id);
     res.json({ id, hidden: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -494,7 +519,7 @@ app.delete('/api/conversation/:otherId', authMiddleware, async (req, res) => {
     `).run(userId, otherId, otherId, userId);
     res.status(204).send();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -506,7 +531,7 @@ app.get('/api/admin/users', ...adminMiddleware, async (req, res) => {
     const users = await db.prepare('SELECT id, username, display_name, is_admin FROM users ORDER BY username').all();
     res.json(users.map((r) => ({ ...r, is_admin: !!r.is_admin })));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -523,7 +548,7 @@ app.delete('/api/admin/conversation', ...adminMiddleware, async (req, res) => {
     `).run(userId, otherId, otherId, userId);
     res.status(204).send();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -546,7 +571,7 @@ app.delete('/api/admin/users/:id', ...adminMiddleware, async (req, res) => {
     cache.invalidateConvsForUser(id);
     res.status(204).send();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 
@@ -558,7 +583,7 @@ app.post('/api/admin/users/:id/admin', ...adminMiddleware, async (req, res) => {
     await db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(id);
     res.status(204).send();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeErrorMessage(e) });
   }
 });
 

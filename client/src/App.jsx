@@ -255,7 +255,7 @@ function App() {
     <div className={`app ${showAdmin || selectedUserId ? 'app--main-open' : ''}`}>
       <aside className="sidebar">
         <header className="sidebar-header">
-          <h1 className="logo">Mini Telegram</h1>
+          <h1 className="logo">Code Snippets</h1>
           <div className="sidebar-header-actions">
             {user?.is_admin && (
               <button type="button" className="btn-admin" onClick={() => setShowAdmin(!showAdmin)} title="Admin">
@@ -301,7 +301,7 @@ function App() {
             <h3>Edit profile</h3>
             <label>
               About
-              <textarea value={profileAbout} onChange={(e) => setProfileAbout(e.target.value)} placeholder="Hey there, I am using Mini Telegram" rows={2} maxLength={150} />
+              <textarea value={profileAbout} onChange={(e) => setProfileAbout(e.target.value)} placeholder="Hey there, I am using Code Snippets" rows={2} maxLength={150} />
             </label>
             <div className="profile-modal-actions">
               <button type="button" onClick={() => setShowProfileEdit(false)}>Cancel</button>

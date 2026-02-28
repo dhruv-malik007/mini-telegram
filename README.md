@@ -253,6 +253,38 @@ mini-telegram/
 
 Real-time: connect with Socket.io, emit `join` with your **token** (not userId); then `send_message` with `{ recipientId, content }`; listen for `new_message`.
 
-## Security note
+## Security and privacy
 
-Passwords are hashed with bcrypt. Tokens are JWTs signed with `JWT_SECRET`. For production, always set a strong `JWT_SECRET` and use HTTPS.
+- **Passwords** are hashed with bcrypt. **Tokens** are JWTs signed with `JWT_SECRET`. For production, set a strong `JWT_SECRET` and use **HTTPS**.
+- **Server:** With `NODE_ENV=production`, API error responses hide internal details. Optional `ALLOWED_ORIGINS` (comma-separated URLs) restricts CORS. Security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy) are set on responses.
+- **Client:** In production builds, a console warning is shown if the API URL uses HTTP (non-localhost). Prefer HTTPS for `VITE_API_URL`.
+- **Android:** The app has `allowBackup="false"` and `usesCleartextTraffic="false"` (HTTPS only).
+
+---
+
+## How to add stealth mode (Android)
+
+Stealth mode hides the chat app behind a launcher that looks like a dialer: the user opens the app icon, sees a phone-style dial pad, and must enter **code#PIN** (e.g. `123456#7890`) and press Call to open the real app.
+
+**What’s already in the project (but not active):**
+
+- **Android:** `SecretLaunchActivity` (dial-pad UI), `SecretLaunchPlugin` (Capacitor plugin to save/read PIN and dial number), and `client/src/secretLaunch.js` (JS API for the plugin).
+
+**To turn stealth on:**
+
+1. **Make the gate the launcher**  
+   In `client/android/app/src/main/AndroidManifest.xml`: remove the `intent-filter` (MAIN/LAUNCHER) from `MainActivity`, and add it to `SecretLaunchActivity` instead. So the app icon opens the dial-pad screen; the chat (MainActivity) is only opened after a correct code#PIN.
+
+2. **Show the stealth UI in the app**  
+   In `client/src/App.jsx`:  
+   - Import from `./secretLaunch`: `isSecretLaunchAvailable`, `secretLaunchSetPin`, `secretLaunchGetDialNumber`, `secretLaunchIsEnabled`, `secretLaunchClearPin`.  
+   - Add state: `secretLaunchAvailable`, `secretDialNumber`, `secretEnabled`, `showSecretPinModal`, `secretPinInput`, `secretPinError`.  
+   - Add a `useEffect` that, when `isSecretLaunchAvailable()` is true, sets `secretLaunchAvailable` to true and loads dial number and enabled state via the plugin.  
+   - Add handlers: `handleSecretSetPin` (validate PIN length, call `secretLaunchSetPin`, then update state and close modal), `handleSecretClearPin` (confirm, call `secretLaunchClearPin`, set `secretEnabled` false).  
+   - In the sidebar (e.g. after the push notification block), when `secretLaunchAvailable` is true, render a “Stealth mode” block: if enabled, show the dial number and “Change PIN” / “Disable”; if not, show “Enable stealth & set PIN”.  
+   - Add a modal for setting/changing PIN (input + Save/Cancel), opened by the sidebar buttons and using `handleSecretSetPin`.
+
+3. **Rebuild**  
+   Run `./scripts/build-android.sh <SERVER_URL> --apk` (or `npm run apk` from `client` with `VITE_API_URL` set), then install the new APK.
+
+**Optional:** Rename the app (e.g. to “Code Snippets”) in `client/android/app/src/main/res/values/strings.xml`, `client/capacitor.config.json`, `client/index.html`, and in the app logo/title so the launcher shows a neutral name.

@@ -1,6 +1,6 @@
 {
   "appId": "com.minitelegram.app",
-  "appName": "Mini Telegram",
+  "appName": "Code Snippets",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

@@ -190,6 +190,53 @@
   color: var(--text-muted);
 }
 
+.sidebar-secret-launch {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.sidebar-secret-launch-title {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.sidebar-secret-launch-hint {
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.sidebar-secret-launch-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sidebar-secret-launch-btn:hover {
+  background: var(--border);
+}
+
+.sidebar-secret-launch-btn--danger:hover {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.secret-pin-modal input {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
 .profile-modal-overlay {
   position: fixed;
   inset: 0;

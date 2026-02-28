@@ -49,7 +49,7 @@ export default function Login({ onLogin, onRegister }) {
   return (
     <div className="login">
       <div className="login-card">
-        <h1 className="login-title">Mini Telegram</h1>
+        <h1 className="login-title">Code Snippets</h1>
         <p className="login-subtitle">
           {mode === 'login' ? 'Sign in to continue.' : 'Create an account to start chatting.'}
         </p>
