@@ -27,12 +27,16 @@ function authMiddleware(req, res, next) {
 }
 
 function requireAdmin(db) {
-  return (req, res, next) => {
-    const row = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.userId);
-    if (!row || !row.is_admin) {
-      return res.status(403).json({ error: 'Admin only' });
+  return async (req, res, next) => {
+    try {
+      const row = await db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.userId);
+      if (!row || !row.is_admin) {
+        return res.status(403).json({ error: 'Admin only' });
+      }
+      next();
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
-    next();
   };
 }
 

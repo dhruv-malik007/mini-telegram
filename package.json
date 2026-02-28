@@ -8,6 +8,7 @@
     "dev": "concurrently \"npm run server\" \"npm run client\""
   },
   "dependencies": {
+    "@libsql/client": "^0.17.0",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.6.0",
     "cors": "^2.8.5",

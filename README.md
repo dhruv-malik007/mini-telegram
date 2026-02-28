@@ -15,9 +15,9 @@ A small-scale messaging app similar to Telegram: real-time 1-on-1 chat, user lis
 
 ## Tech stack
 
-- **Backend:** Node.js, Express, Socket.io, better-sqlite3, bcrypt, jsonwebtoken
+- **Backend:** Node.js, Express, Socket.io, bcrypt, jsonwebtoken
+- **Data:** SQLite in `data/app.db` (local), or **Turso** (free online SQLite) when configured
 - **Frontend:** React (Vite), Socket.io client
-- **Data:** SQLite in `data/app.db`
 
 ## Run locally
 
@@ -75,38 +75,87 @@ git push -u origin main
 5. Click **Create Web Service**. Wait for the first deploy to finish.
 6. Copy your app URL, e.g. `https://mini-telegram-xxxx.onrender.com` (no trailing slash).
 
-**Note:** On the free tier, the service may spin down when idle and the disk is ephemeral (data can reset on redeploy). For permanent data, use a paid plan with a persistent disk or an external DB.
+**Note:** On the free tier, the service may spin down when idle and the disk is ephemeral (data can reset on redeploy). For **persistent messages** without a paid disk, use **Turso** (free online SQLite) below.
+
+### Optional: Turso (free online database)
+
+Use [Turso](https://turso.tech) for a free, hosted SQLite database so messages persist across deploys and restarts.
+
+1. Sign up at [turso.tech](https://turso.tech) and install the CLI: `curl -sSfL https://get.turso.tech/install.sh | sh`
+2. Create a database: `turso db create mini-telegram`
+3. Get URL and token:
+   - `turso db show mini-telegram --url`
+   - `turso db tokens create mini-telegram`
+4. Set environment variables (locally or in Render **Environment**):
+   - `TURSO_DATABASE_URL` = the database URL (e.g. `libsql://mini-telegram-xxx.turso.io`)
+   - `TURSO_AUTH_TOKEN` = the token from step 3
+
+If both are set, the server uses Turso instead of local `data/app.db`. No code changes needed.
 
 ---
 
-## Build the APK (Android app)
+## Create the Android app
 
-The APK uses the same React app and connects to your **deployed server** URL.
+The Android app is the same Mini Telegram UI in a native shell. It talks to your **deployed server** (e.g. Render). You need a **server URL** (HTTPS) before building.
 
-### 1. Set your server URL and build the web app
+### Prerequisites
 
-Use the Render URL from above (or any HTTPS server):
+- [Node.js](https://nodejs.org/) (v18+)
+- [Android Studio](https://developer.android.com/studio) (to build the APK)
+- Your server already deployed and its URL (e.g. `https://mini-telegram-xxxx.onrender.com`)
+
+### Step 1: Build the web app and sync to Android
+
+From the **project root** (replace the URL with your server):
+
+```bash
+chmod +x scripts/build-android.sh
+./scripts/build-android.sh https://mini-telegram-3z7r.onrender.com
+```
+
+Or from the `client` folder:
 
 ```bash
 cd client
 export VITE_API_URL="https://mini-telegram-xxxx.onrender.com"
 npm run build
+npx cap sync android
 ```
 
-(Replace with your real URL, no trailing slash.)
+### Step 2: Build the APK in Android Studio
 
-### 2. Create the APK
+**Option A – Open from terminal (recommended)**
 
-**Option A — Android Studio (recommended)**
+From the project root, run:
 
 ```bash
-npx cap sync android
-npx cap open android
+# Replace the path if your Android Studio is elsewhere
+~/Downloads/android-studio-panda1-patch1-linux/android-studio/bin/studio.sh "$(pwd)/client/android"
 ```
 
-When Android Studio opens: **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The APK is at `client/android/app/build/outputs/apk/debug/app-debug.apk`.
+**Option B – Open from inside Android Studio**
 
-**Option B — Command line** (needs [Android SDK](https://developer.android.com/studio) and `ANDROID_HOME` set)
+1. Launch Android Studio (e.g. from your app menu or run `studio.sh`).
+2. On the welcome screen, click **Open** (or **File → Open**).
+3. Go to your project and select the **`client/android`** folder (not the repo root).
+4. Click **OK**.
+
+**Then in Android Studio:**
+
+1. **Wait for Gradle sync** – A progress bar at the bottom will say “Syncing…” or “Gradle build finished”. Wait until it’s done (first time can take a few minutes).
+2. **Build the APK** – Top menu: **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+3. **Find the APK** – When the build finishes, a small notification appears at the bottom right. Click **Locate** to open the folder. Or open this path yourself:  
+   `client/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+### Step 3: Install on your phone
+
+1. Copy `app-debug.apk` to your phone (USB, email, cloud, etc.).
+2. On the phone, open the APK and install (allow “Install unknown apps” if prompted).
+3. Open **Mini Telegram**, sign in or sign up — the app uses your deployed server.
+
+### Optional: Build APK from command line
+
+If you have the [Android SDK](https://developer.android.com/studio) and `ANDROID_HOME` set:
 
 ```bash
 cd client
@@ -115,17 +164,11 @@ npm run apk
 
 APK path: `client/android/app/build/outputs/apk/debug/app-debug.apk`.
 
-### 3. Install on your phone
-
-1. Copy `app-debug.apk` to your phone (USB, cloud, etc.).
-2. On the phone, open the APK and install (enable "Install unknown apps" for your file manager or browser if asked).
-3. Open the app, sign up or sign in — you'll be using your deployed server.
-
 ---
 
 ## Other ways to run the server
 
-For a long-running or production setup: **Set `JWT_SECRET`** to a long random string. Never use the default in production. **Use HTTPS** so the Android app can connect. **Persist `data/`** so the SQLite DB survives restarts.
+For a long-running or production setup: **Set `JWT_SECRET`** to a long random string. Never use the default in production. **Use HTTPS** so the Android app can connect. For persistent data, use **Turso** (see above) or ensure **`data/`** is persisted so the local SQLite DB survives restarts.
 
 Example (VPS or your machine):
 
@@ -155,11 +198,13 @@ mini-telegram/
 ├── server/
 │   ├── index.js         # Express API + Socket.io
 │   ├── auth.js          # JWT sign/verify + auth middleware
-│   └── db.js            # SQLite schema and connection
+│   └── db.js            # SQLite (local) or Turso (online) schema and connection
 ├── data/
 │   └── app.db           # SQLite DB (created on first run)
 ├── package.json
 ├── render.yaml          # Deploy from GitHub to Render
+├── scripts/
+│   └── build-android.sh # One-command build + sync for Android
 └── README.md
 ```
 
