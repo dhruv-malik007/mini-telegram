@@ -96,13 +96,32 @@ function App() {
   }, []);
 
   const handleNewMessage = useCallback((msg) => {
-    setMessages((prev) => [...prev, msg]);
-  }, []);
+    setMessages((prev) => {
+      const fromMe = msg.sender_id === auth?.user?.id;
+      const withoutPending = fromMe ? prev.filter((m) => !m.pending) : prev;
+      const next = [...withoutPending, msg];
+      next.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+      return next;
+    });
+  }, [auth?.user?.id]);
 
   const handleSendMessage = useCallback((content, replyToId) => {
-    if (!socket || !selectedUserId) return;
+    if (!socket || !selectedUserId || !auth?.user) return;
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      sender_id: auth.user.id,
+      recipient_id: selectedUserId,
+      content,
+      created_at: Math.floor(Date.now() / 1000),
+      reply_to_id: replyToId ?? null,
+      edited_at: null,
+      deleted_at: null,
+      pending: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
     socket.emit('send_message', { recipientId: selectedUserId, content, replyToId: replyToId || undefined });
-  }, [socket, selectedUserId]);
+  }, [socket, selectedUserId, auth?.user]);
 
   const handleMessageUpdated = useCallback((updated) => {
     setMessages((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));

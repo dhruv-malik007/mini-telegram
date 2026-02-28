@@ -126,31 +126,28 @@ app.patch('/api/me', authMiddleware, async (req, res) => {
   }
 });
 
-// Protected routes — list users with last_seen_at, about, unread_count
+// Protected routes — list users with last_seen_at, about, unread_count (single unread query)
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
     await updateLastSeen(req.userId);
     const users = await db.prepare('SELECT id, username, display_name, about, last_seen_at FROM users WHERE id != ? ORDER BY username').all(req.userId);
-    const receipts = await db.prepare('SELECT other_user_id, last_read_message_id FROM read_receipts WHERE user_id = ?').all(req.userId);
-    const lastReadByOther = new Map(receipts.map((r) => [r.other_user_id, r.last_read_message_id]));
-    const result = [];
-    for (const u of users) {
-      const otherId = u.id;
-      const lastRead = lastReadByOther.get(otherId) ?? 0;
-      const unreadRow = await db.prepare(`
-        SELECT COUNT(*) AS c FROM messages m
-        LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
-        WHERE m.sender_id = ? AND m.recipient_id = ? AND m.deleted_at IS NULL AND h.message_id IS NULL AND m.id > ?
-      `).get(req.userId, otherId, req.userId, lastRead);
-      result.push({
-        id: u.id,
-        username: u.username,
-        display_name: u.display_name,
-        about: u.about || '',
-        last_seen_at: u.last_seen_at ?? null,
-        unread_count: unreadRow?.c ?? 0,
-      });
-    }
+    const unreadRows = await db.prepare(`
+      SELECT m.sender_id AS other_user_id, COUNT(*) AS c
+      FROM messages m
+      LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+      WHERE m.recipient_id = ? AND m.deleted_at IS NULL AND h.message_id IS NULL
+        AND m.id > COALESCE((SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND other_user_id = m.sender_id), 0)
+      GROUP BY m.sender_id
+    `).all(req.userId, req.userId, req.userId);
+    const unreadMap = new Map((unreadRows || []).map((r) => [r.other_user_id, r.c]));
+    const result = users.map((u) => ({
+      id: u.id,
+      username: u.username,
+      display_name: u.display_name,
+      about: u.about || '',
+      last_seen_at: u.last_seen_at ?? null,
+      unread_count: Number(unreadMap.get(u.id) ?? 0),
+    }));
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });

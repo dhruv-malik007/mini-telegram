@@ -117,11 +117,19 @@ export default function Conversation({
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages]);
 
-  // Mark as read when viewing this conversation (send latest message id)
+  // Mark as read when viewing this conversation (debounced)
+  const markReadRef = useRef(null);
   useEffect(() => {
     if (!socket || !otherUser || !messages.length) return;
-    const maxId = Math.max(...messages.map((m) => m.id));
-    socket.emit('mark_read', { otherUserId: otherUser.id, lastReadMessageId: maxId });
+    const numericIds = messages.map((m) => m.id).filter((id) => typeof id === 'number');
+    if (numericIds.length === 0) return;
+    const maxId = Math.max(...numericIds);
+    if (markReadRef.current) clearTimeout(markReadRef.current);
+    markReadRef.current = setTimeout(() => {
+      socket.emit('mark_read', { otherUserId: otherUser.id, lastReadMessageId: maxId });
+      markReadRef.current = null;
+    }, 400);
+    return () => { if (markReadRef.current) clearTimeout(markReadRef.current); };
   }, [socket, otherUser?.id, messages.length]);
 
   const handleInputChange = (e) => {
@@ -257,17 +265,19 @@ export default function Conversation({
           const msg = row.message;
           const isOutgoing = msg.sender_id === currentUser.id;
           const replyTo = msg.reply_to_id ? getReplyMessage(msg.reply_to_id) : null;
-          const isRead = isOutgoing && lastReadByOther >= msg.id;
+          const pending = !!msg.pending;
+          const isRead = isOutgoing && !pending && typeof msg.id === 'number' && lastReadByOther >= msg.id;
 
           return (
             <div
               key={msg.id}
-              className={`message ${isOutgoing ? 'message--outgoing' : 'message--incoming'}`}
+              className={`message ${isOutgoing ? 'message--outgoing' : 'message--incoming'} ${pending ? 'message--pending' : ''}`}
             >
               <div className="message-bubble-wrap">
                 <div
                   className="message-bubble"
                   onContextMenu={(e) => {
+                    if (pending) return;
                     e.preventDefault();
                     setMenuMessageId(menuMessageId === msg.id ? null : msg.id);
                   }}
@@ -296,10 +306,11 @@ export default function Conversation({
                         <span className="message-time">
                           {msg.created_at && new Date(msg.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           {msg.edited_at && <span className="message-edited"> (edited)</span>}
+                          {pending && <span className="message-sending"> · Sending...</span>}
                         </span>
                         {isOutgoing && (
-                          <span className="message-status" title={isRead ? 'Read' : 'Sent'}>
-                            {isRead ? '✓✓' : '✓'}
+                          <span className="message-status" title={pending ? 'Sending' : isRead ? 'Read' : 'Sent'}>
+                            {pending ? '○' : isRead ? '✓✓' : '✓'}
                           </span>
                         )}
                       </span>
