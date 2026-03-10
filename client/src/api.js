@@ -17,8 +17,21 @@ function authHeaders() {
   };
 }
 
+/** Turn "Failed to fetch" into a clearer message (e.g. Render cold start on phone). */
+function wrapNetworkError(err) {
+  if (err instanceof TypeError && (err.message === 'Failed to fetch' || /network|fetch/i.test(err.message || ''))) {
+    return new Error('Cannot reach server. If the app just woke up (e.g. Render free tier), wait a moment and try again.');
+  }
+  return err;
+}
+
 export async function getUsers() {
-  const res = await fetch(getApiUrl('/api/users'), { headers: authHeaders() });
+  let res;
+  try {
+    res = await fetch(getApiUrl('/api/users'), { headers: authHeaders() });
+  } catch (e) {
+    throw wrapNetworkError(e);
+  }
   if (res.status === 401) {
     const e = new Error('Unauthorized');
     e.status = 401;
@@ -29,26 +42,36 @@ export async function getUsers() {
 }
 
 export async function register(username, password, displayName) {
-  const res = await fetch(getApiUrl('/api/register'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: username.trim(),
-      password,
-      display_name: displayName?.trim() || undefined,
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(getApiUrl('/api/register'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username.trim(),
+        password,
+        display_name: displayName?.trim() || undefined,
+      }),
+    });
+  } catch (e) {
+    throw wrapNetworkError(e);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
 
 export async function login(username, password) {
-  const res = await fetch(getApiUrl('/api/login'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: username.trim(), password }),
-  });
+  let res;
+  try {
+    res = await fetch(getApiUrl('/api/login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: username.trim(), password }),
+    });
+  } catch (e) {
+    throw wrapNetworkError(e);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
@@ -70,7 +93,12 @@ export async function getConversation(otherId, opts = {}) {
 }
 
 export async function getMe() {
-  const res = await fetch(getApiUrl('/api/me'), { headers: authHeaders() });
+  let res;
+  try {
+    res = await fetch(getApiUrl('/api/me'), { headers: authHeaders() });
+  } catch (e) {
+    throw wrapNetworkError(e);
+  }
   if (res.status === 401) {
     const e = new Error('Unauthorized');
     e.status = 401;
@@ -98,7 +126,12 @@ export async function runCodeChallenge(code, stdin) {
 
 /** Check if code challenge (secret) is configured on the server. No auth. Returns { configured: boolean }. */
 export async function getCodeChallengeStatus() {
-  const res = await fetch(getApiUrl('/api/code-challenge/status'));
+  let res;
+  try {
+    res = await fetch(getApiUrl('/api/code-challenge/status'));
+  } catch (_) {
+    return { configured: false };
+  }
   if (!res.ok) return { configured: false };
   const data = await res.json().catch(() => ({}));
   return { configured: !!data.configured };
