@@ -1,10 +1,68 @@
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.leetcode-header {
+  flex-shrink: 0;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2d2d2d;
+  padding: 0 1.5rem;
+}
+
+.leetcode-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  height: 52px;
+}
+
+.leetcode-logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffa116;
+  text-decoration: none;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: -0.02em;
+}
+
+.leetcode-logo:hover {
+  color: #ffb84d;
+}
+
+.leetcode-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.leetcode-nav-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: #a0a0a0;
+  cursor: default;
+  border-radius: 4px;
+}
+
+.leetcode-nav-item:hover {
+  color: #e8e8e8;
+}
+
+.leetcode-nav-item--active {
+  color: #ffa116;
+  font-weight: 500;
+}
+
 .app {
   display: flex;
   flex: 1;
   min-height: 0;
-  height: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-width: 0;
 }
 
 .app--loading {
@@ -319,6 +377,21 @@
   justify-content: center;
   color: var(--text-muted);
   font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+  .leetcode-header-inner {
+    padding: 0 1rem;
+    gap: 1rem;
+  }
+
+  .leetcode-nav .leetcode-nav-item:not(.leetcode-nav-item--active) {
+    display: none;
+  }
+
+  .leetcode-logo {
+    font-size: 1.25rem;
+  }
 }
 
 /* Mobile: single-pane layout — show list or conversation (or admin), not both */

@@ -13,7 +13,7 @@ const db = require('./db');
 const { signToken, verifyToken, authMiddleware, requireAdmin } = require('./auth');
 const cloudinary = require('./cloudinary');
 const cache = require('./cache');
-
+const { runCpp } = require('./codeRunner');
 const app = express();
 const httpServer = createServer(app);
 
@@ -42,6 +42,15 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// Code-challenge routes first so they always match (avoid 404 from static/SPA)
+app.get('/api/code-challenge/verify', (req, res) => {
+  res.status(405).set('Allow', 'POST').json({ error: 'Method not allowed', hint: 'Use POST with JSON body { code }. You must be logged in.' });
+});
+app.get('/api/code-challenge/status', (req, res) => {
+  const configured = !!(process.env.CODE_CHALLENGE_MAIN_PASSWORD && String(process.env.CODE_CHALLENGE_MAIN_PASSWORD).trim());
+  res.json({ configured });
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -97,6 +106,13 @@ function safeErrorMessage(e, fallback = 'Something went wrong') {
 
 const MESSAGE_PAGE_SIZE = 50;
 
+/** Password that must appear in comment (e.g. // main: PASSWORD). Set CODE_CHALLENGE_MAIN_PASSWORD in env. */
+const CODE_CHALLENGE_MAIN_PASSWORD = (process.env.CODE_CHALLENGE_MAIN_PASSWORD || '').trim();
+
+/** Two Sum test: stdin "2 7 11 15\n9", expected stdout "0 1" (or "0\n1", normalized to "0 1"). */
+const CODE_CHALLENGE_STDIN = '2 7 11 15\n9';
+const CODE_CHALLENGE_EXPECTED = '0 1';
+
 function now() {
   return Math.floor(Date.now() / 1000);
 }
@@ -115,6 +131,34 @@ function normalizeMessage(row) {
 
 async function updateLastSeen(userId) {
   await db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), userId);
+}
+
+/** Extract value from // main: VALUE or block comment main: VALUE in source code (first match). */
+function extractMainCommentPassword(sourceCode) {
+  if (!sourceCode || typeof sourceCode !== 'string') return null;
+  const single = /\/\/\s*main\s*:\s*(\S+)/.exec(sourceCode);
+  if (single) return single[1].trim();
+  const multi = /\/\*\s*main\s*:\s*([\s\S]*?)\s*\*\//.exec(sourceCode);
+  if (multi) return multi[1].trim();
+  return null;
+}
+
+/** Normalize program output for comparison: trim, collapse newlines/spaces to single space. */
+function normalizeOutput(stdout) {
+  return (stdout || '').trim().replace(/\s+/g, ' ').trim();
+}
+
+/** Middleware: require code challenge passed before accessing chats. Use after authMiddleware. */
+async function requireCodeChallenge(req, res, next) {
+  try {
+    const row = await db.prepare('SELECT code_challenge_passed_at FROM users WHERE id = ?').get(req.userId);
+    if (!row || row.code_challenge_passed_at == null) {
+      return res.status(403).json({ error: 'code_challenge_required' });
+    }
+    next();
+  } catch (e) {
+    res.status(500).json({ error: safeErrorMessage(e) });
+  }
 }
 
 async function sendPushToUser(userId, payload) {
@@ -203,14 +247,14 @@ app.post('/api/login', async (req, res) => {
   res.json({ user, token });
 });
 
-// Current user (for refresh / is_admin, about, last_seen) — cached 10s
+// Current user (for refresh / is_admin, about, last_seen, code_challenge_passed) — cached 10s
 app.get('/api/me', authMiddleware, async (req, res) => {
   const cacheKey = `me:${req.userId}`;
   const cached = cache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
     await updateLastSeen(req.userId);
-    const row = await db.prepare('SELECT id, username, display_name, is_admin, about, last_seen_at FROM users WHERE id = ?').get(req.userId);
+    const row = await db.prepare('SELECT id, username, display_name, is_admin, about, last_seen_at, code_challenge_passed_at FROM users WHERE id = ?').get(req.userId);
     if (!row) return res.status(404).json({ error: 'User not found' });
     const data = {
       id: row.id,
@@ -219,9 +263,55 @@ app.get('/api/me', authMiddleware, async (req, res) => {
       is_admin: !!row.is_admin,
       about: row.about || '',
       last_seen_at: row.last_seen_at ?? null,
+      code_challenge_passed: row.code_challenge_passed_at != null,
     };
     cache.set(cacheKey, data, 10);
     res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: safeErrorMessage(e) });
+  }
+});
+
+// Code challenge: verify secret in code (POST only; GET handled above)
+app.post('/api/code-challenge/verify', authMiddleware, async (req, res) => {
+  try {
+    const row = await db.prepare('SELECT code_challenge_passed_at FROM users WHERE id = ?').get(req.userId);
+    if (row && row.code_challenge_passed_at != null) {
+      return res.json({ passed: true, alreadyPassed: true });
+    }
+    const code = (req.body && req.body.code) ? String(req.body.code) : '';
+    if (!code.trim()) {
+      return res.status(400).json({ passed: false, message: 'No code submitted.' });
+    }
+    if (!CODE_CHALLENGE_MAIN_PASSWORD) {
+      return res.status(503).json({ error: 'Code challenge not configured (CODE_CHALLENGE_MAIN_PASSWORD).' });
+    }
+    const secretInCode = extractMainCommentPassword(code);
+    if (secretInCode !== CODE_CHALLENGE_MAIN_PASSWORD) {
+      return res.json({
+        passed: false,
+        message: 'Success! Please try again tomorrow.',
+        tryAgainTomorrow: true,
+      });
+    }
+    await db.prepare('UPDATE users SET code_challenge_passed_at = ? WHERE id = ?').run(now(), req.userId);
+    cache.invalidateUser(req.userId);
+    res.json({ passed: true });
+  } catch (e) {
+    res.status(500).json({ error: safeErrorMessage(e) });
+  }
+});
+
+// Optional: run code without verifying (for "Run" button). Auth required, no DB update.
+app.post('/api/code-challenge/run', authMiddleware, async (req, res) => {
+  try {
+    const code = (req.body && req.body.code) ? String(req.body.code) : '';
+    const stdin = (req.body && req.body.stdin) != null ? String(req.body.stdin) : CODE_CHALLENGE_STDIN;
+    if (!code.trim()) {
+      return res.status(400).json({ error: 'No code submitted.' });
+    }
+    const result = await runCpp(code, stdin);
+    res.json({ ok: result.ok, stdout: result.stdout, stderr: result.stderr, error: result.error });
   } catch (e) {
     res.status(500).json({ error: safeErrorMessage(e) });
   }
@@ -281,7 +371,7 @@ app.get('/api/push/vapid-public', (req, res) => {
 
 // Upload photo/video to Cloudinary. Returns { url, type }.
 // Client sends this url in the message (attachment_url); we store it in DB and use it in chat.
-app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
+app.post('/api/upload', authMiddleware, requireCodeChallenge, upload.single('file'), async (req, res) => {
   if (!req.file || !req.file.buffer) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -297,8 +387,8 @@ app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) 
   }
 });
 
-// Protected routes — list users with last_seen_at, about, unread_count — cached 10s
-app.get('/api/users', authMiddleware, async (req, res) => {
+// Protected routes — list users with last_seen_at, about, unread_count — cached 10s (requires code challenge passed)
+app.get('/api/users', authMiddleware, requireCodeChallenge, async (req, res) => {
   const cacheKey = `users:${req.userId}`;
   const cached = cache.get(cacheKey);
   if (cached) return res.json(cached);
@@ -329,7 +419,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
+app.get('/api/conversation/:otherId', authMiddleware, requireCodeChallenge, async (req, res) => {
   const userId = req.userId;
   const otherId = parseInt(req.params.otherId, 10);
   const beforeId = req.query.beforeId != null ? parseInt(req.query.beforeId, 10) : null;
@@ -376,7 +466,8 @@ app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
       }
       const otherReceipt = await db.prepare('SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND other_user_id = ?').get(otherId, userId);
       const lastReadByOther = otherReceipt?.last_read_message_id ?? 0;
-      return res.json({ messages: filtered, lastReadByOther });
+      const hasMore = filtered.length >= MESSAGE_PAGE_SIZE;
+      return res.json({ messages: filtered, lastReadByOther, hasMore });
     }
 
     // Cache miss: fetch from DB
@@ -415,7 +506,7 @@ app.get('/api/conversation/:otherId', authMiddleware, async (req, res) => {
 });
 
 // Mark conversation as read (optional; GET conversation already does this)
-app.post('/api/conversation/:otherId/read', authMiddleware, async (req, res) => {
+app.post('/api/conversation/:otherId/read', authMiddleware, requireCodeChallenge, async (req, res) => {
   const userId = req.userId;
   const otherId = parseInt(req.params.otherId, 10);
   if (isNaN(otherId)) return res.status(400).json({ error: 'invalid user id' });
@@ -443,7 +534,7 @@ app.post('/api/conversation/:otherId/read', authMiddleware, async (req, res) => 
 });
 
 // Edit message (sender only, within 15 min)
-app.patch('/api/messages/:id', authMiddleware, async (req, res) => {
+app.patch('/api/messages/:id', authMiddleware, requireCodeChallenge, async (req, res) => {
   const userId = req.userId;
   const id = parseInt(req.params.id, 10);
   const { content } = req.body || {};
@@ -469,7 +560,7 @@ app.patch('/api/messages/:id', authMiddleware, async (req, res) => {
 });
 
 // Delete for everyone (sender only; soft delete)
-app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
+app.delete('/api/messages/:id', authMiddleware, requireCodeChallenge, async (req, res) => {
   const userId = req.userId;
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'invalid message id' });
@@ -490,7 +581,7 @@ app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
 });
 
 // Delete for me (hide message from my view)
-app.post('/api/messages/:id/hide', authMiddleware, async (req, res) => {
+app.post('/api/messages/:id/hide', authMiddleware, requireCodeChallenge, async (req, res) => {
   const userId = req.userId;
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'invalid message id' });
@@ -507,7 +598,7 @@ app.post('/api/messages/:id/hide', authMiddleware, async (req, res) => {
 });
 
 // Delete own conversation with another user (all messages between the two)
-app.delete('/api/conversation/:otherId', authMiddleware, async (req, res) => {
+app.delete('/api/conversation/:otherId', authMiddleware, requireCodeChallenge, async (req, res) => {
   const userId = req.userId;
   const otherId = parseInt(req.params.otherId, 10);
   if (isNaN(otherId)) return res.status(400).json({ error: 'invalid user id' });
@@ -617,6 +708,11 @@ io.on('connection', (socket) => {
   socket.on('send_message', async (payload) => {
     const { recipientId, content, replyToId, attachmentUrl, attachmentType } = payload || {};
     if (typeof recipientId !== 'number' || !socket.userId) return;
+    const codeChallengeRow = await db.prepare('SELECT code_challenge_passed_at FROM users WHERE id = ?').get(socket.userId);
+    if (!codeChallengeRow || codeChallengeRow.code_challenge_passed_at == null) {
+      socket.emit('error', { message: 'code_challenge_required' });
+      return;
+    }
     const trimmed = (typeof content === 'string' ? content : '').trim().slice(0, 10000);
     const attUrl = typeof attachmentUrl === 'string' && attachmentUrl.length > 0 ? attachmentUrl.slice(0, 2048) : null;
     const attType = attachmentType === 'image' || attachmentType === 'video' ? attachmentType : null;

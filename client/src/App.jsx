@@ -6,6 +6,7 @@ import Login from './Login';
 import ChatList from './ChatList';
 import Conversation from './Conversation';
 import AdminPanel from './AdminPanel';
+import LeetCodeGate from './LeetCodeGate';
 import './App.css';
 
 const AUTH_KEY = 'mini-telegram-auth';
@@ -32,7 +33,7 @@ function App() {
       try {
         const parsed = JSON.parse(stored);
         setAuth(parsed);
-        // Refresh user from server (e.g. is_admin)
+        // Refresh user from server (is_admin, code_challenge_passed, etc.)
         getMe().then((user) => {
           setAuth((prev) => (prev ? { ...prev, user } : null));
           setProfileAbout(user?.about ?? '');
@@ -54,11 +55,12 @@ function App() {
   }, [auth?.token]);
 
   useEffect(() => {
-    if (!auth) return;
+    if (!auth || !auth.user?.code_challenge_passed) return;
     getUsers()
       .then(setUsers)
       .catch((err) => {
         if (err.status === 401) setAuth(null);
+        else if (err.status === 403) setAuth((prev) => prev ? { ...prev, user: { ...prev.user, code_challenge_passed: false } } : null);
         else setUsers([]);
       });
   }, [auth]);
@@ -249,13 +251,42 @@ function App() {
   }
 
   const { user } = auth;
+  const codeChallengePassed = user && user.code_challenge_passed;
   const otherUser = users.find((u) => u.id === selectedUserId);
 
+  // After login: must solve the code challenge before accessing chats
+  if (!codeChallengePassed) {
+    return (
+      <LeetCodeGate
+        onPass={() => {
+          getMe().then((updatedUser) => {
+            setAuth((prev) => (prev ? { ...prev, user: updatedUser } : null));
+          }).catch(() => {});
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
+    <div className="app-wrapper">
+      <header className="leetcode-header" aria-label="LeetCode navigation">
+        <div className="leetcode-header-inner">
+          <a href="/" className="leetcode-logo" onClick={(e) => e.preventDefault()}>
+            LeetCode
+          </a>
+          <nav className="leetcode-nav">
+            <span className="leetcode-nav-item">Problems</span>
+            <span className="leetcode-nav-item">Study Plan</span>
+            <span className="leetcode-nav-item leetcode-nav-item--active">Discuss</span>
+            <span className="leetcode-nav-item">Contest</span>
+          </nav>
+        </div>
+      </header>
     <div className={`app ${showAdmin || selectedUserId ? 'app--main-open' : ''}`}>
       <aside className="sidebar">
         <header className="sidebar-header">
-          <h1 className="logo">Code Snippets</h1>
+          <h1 className="logo">Discuss</h1>
           <div className="sidebar-header-actions">
             {user?.is_admin && (
               <button type="button" className="btn-admin" onClick={() => setShowAdmin(!showAdmin)} title="Admin">
@@ -367,6 +398,7 @@ function App() {
           </div>
         )}
       </main>
+    </div>
     </div>
   );
 }

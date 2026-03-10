@@ -38,7 +38,9 @@ npm run dev
 - **API + Socket server** at http://localhost:3001  
 - **React app** at http://localhost:5173  
 
-Open http://localhost:5173, then **Sign up** to create an account or **Sign in** if you already have one.
+Open http://localhost:5173. The app talks to the API on port 3001, so keep both running (use `npm run dev` from the project root). If you see "Cannot POST /api/..." or Run/Submit fail, create `client/.env` with:
+`VITE_API_URL=http://localhost:3001`
+Then restart the client. Then **Sign up** or **Sign in**.
 
 ### 3. Try with two users
 
@@ -116,6 +118,10 @@ To send browser push notifications when the user gets a new message:
    - `VAPID_PRIVATE_KEY` or `VAPID_PRIVATE` = the private key
 
 If both are set, users can click **Enable notifications** in the sidebar to receive push notifications when they’re not in the app.
+
+### Optional: Code challenge (secret in code)
+
+After **login**, users must solve a static Two Sum problem in C++ and include a **secret password** in their code (e.g. `// main: mysecret` or `/* main: mysecret */`). Set **`CODE_CHALLENGE_MAIN_PASSWORD`** in `.env` (e.g. `mysecret`). If the code has the correct secret and passes the test, they get access to Discuss. If the secret is missing or wrong, they see “Success! Please try again tomorrow.” but do not get access. Code runs via [Piston](https://github.com/engineer-man/piston); set **`PISTON_EXECUTE_URL`** if needed.
 
 ---
 

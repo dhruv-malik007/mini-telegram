@@ -28,6 +28,7 @@ if (useTurso) {
     password_hash TEXT,
     about TEXT,
     last_seen_at INTEGER,
+    code_challenge_passed_at INTEGER,
     created_at INTEGER DEFAULT (unixepoch())
   );
 
@@ -93,6 +94,7 @@ if (useTurso) {
       'ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0',
       'ALTER TABLE users ADD COLUMN about TEXT',
       'ALTER TABLE users ADD COLUMN last_seen_at INTEGER',
+      'ALTER TABLE users ADD COLUMN code_challenge_passed_at INTEGER',
       'ALTER TABLE messages ADD COLUMN reply_to_id INTEGER',
       'ALTER TABLE messages ADD COLUMN edited_at INTEGER',
       'ALTER TABLE messages ADD COLUMN deleted_at INTEGER',
@@ -173,6 +175,7 @@ if (useTurso) {
     password_hash TEXT,
     about TEXT,
     last_seen_at INTEGER,
+    code_challenge_passed_at INTEGER,
     created_at INTEGER DEFAULT (strftime('%s', 'now'))
   );
 
@@ -231,6 +234,8 @@ if (useTurso) {
     cols = sqlite.prepare('PRAGMA table_info(users)').all();
     if (!cols.some((c) => c.name === 'about')) sqlite.exec('ALTER TABLE users ADD COLUMN about TEXT');
     if (!cols.some((c) => c.name === 'last_seen_at')) sqlite.exec('ALTER TABLE users ADD COLUMN last_seen_at INTEGER');
+    cols = sqlite.prepare('PRAGMA table_info(users)').all();
+    if (!cols.some((c) => c.name === 'code_challenge_passed_at')) sqlite.exec('ALTER TABLE users ADD COLUMN code_challenge_passed_at INTEGER');
     cols = sqlite.prepare('PRAGMA table_info(messages)').all();
     if (!cols.some((c) => c.name === 'reply_to_id')) sqlite.exec('ALTER TABLE messages ADD COLUMN reply_to_id INTEGER');
     if (!cols.some((c) => c.name === 'edited_at')) sqlite.exec('ALTER TABLE messages ADD COLUMN edited_at INTEGER');

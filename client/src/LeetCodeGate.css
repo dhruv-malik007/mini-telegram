@@ -1,0 +1,425 @@
+.leetcode-gate {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 100vh;
+  background: #0f0f0f;
+  color: #e8e8e8;
+  overflow: hidden;
+}
+
+.leetcode-gate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.leetcode-gate-logo {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffa116;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.leetcode-gate-badge {
+  font-size: 0.8rem;
+  color: #ffa116;
+  background: rgba(255, 161, 22, 0.12);
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+}
+
+.leetcode-gate-logout {
+  margin-left: auto;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+  color: #b0b0b0;
+  background: transparent;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.leetcode-gate-logout:hover {
+  color: #e8e8e8;
+  border-color: #4d4d4d;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.leetcode-gate-status {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+.leetcode-gate-status code {
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.leetcode-gate-status--error {
+  background: rgba(220, 53, 69, 0.15);
+  color: #f8a5a5;
+  border-bottom: 1px solid rgba(220, 53, 69, 0.3);
+}
+.leetcode-gate-status--error code {
+  background: rgba(0, 0, 0, 0.2);
+}
+.leetcode-gate-status--ok {
+  background: rgba(40, 167, 69, 0.12);
+  color: #7dd89a;
+  border-bottom: 1px solid rgba(40, 167, 69, 0.25);
+}
+.leetcode-gate-status--ok code {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.leetcode-gate-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 2rem;
+  color: #b0b0b0;
+}
+
+.leetcode-gate-loading .loader {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #2d2d2d;
+  border-top-color: #ffa116;
+  border-radius: 50%;
+  animation: leetcode-gate-spin 0.8s linear infinite;
+}
+
+@keyframes leetcode-gate-spin {
+  to { transform: rotate(360deg); }
+}
+
+.leetcode-gate-main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.leetcode-gate-card {
+  background: #1a1a1a;
+  border: 1px solid #2d2d2d;
+  border-radius: 8px;
+  padding: 1.5rem 2rem;
+}
+
+.leetcode-gate-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.leetcode-gate-difficulty {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.leetcode-gate-difficulty--easy {
+  background: rgba(0, 184, 163, 0.2);
+  color: #00b8a3;
+}
+
+.leetcode-gate-difficulty--medium {
+  background: rgba(255, 161, 22, 0.2);
+  color: #ffa116;
+}
+
+.leetcode-gate-difficulty--hard {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+}
+
+.leetcode-gate-problem-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #e8e8e8;
+  flex: 1;
+}
+
+.leetcode-gate-source {
+  font-size: 0.75rem;
+  color: #666;
+  margin-left: auto;
+}
+
+.leetcode-gate-problem-content {
+  margin-bottom: 1rem;
+}
+
+.leetcode-gate-problem-content p {
+  margin: 0 0 0.75rem 0;
+}
+
+.leetcode-gate-problem-content pre {
+  background: #0f0f0f;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 1rem 0;
+  color: #b0b0b0;
+}
+
+.leetcode-gate-problem-content ul {
+  margin: 0.5rem 0 1rem 1.25rem;
+  padding: 0;
+}
+
+.leetcode-gate-input-format {
+  font-size: 1rem;
+  margin: 1rem 0 0.35rem 0;
+  color: #e8e8e8;
+}
+
+.leetcode-gate-example-inline {
+  margin: 0.5rem 0 1rem 0;
+  color: #b0b0b0;
+  font-size: 0.9rem;
+}
+
+.leetcode-gate-description {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #b0b0b0;
+  margin-bottom: 1.5rem;
+}
+
+.leetcode-gate-description p {
+  margin: 0 0 0.75rem 0;
+}
+
+.leetcode-gate-description code {
+  background: #2d2d2d;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #ffa116;
+}
+
+.leetcode-gate-description h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.35rem 0;
+  color: #e8e8e8;
+}
+
+.leetcode-gate-description pre {
+  background: #0f0f0f;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 1rem 0;
+  color: #b0b0b0;
+}
+
+.leetcode-gate-unlock-hint {
+  margin-top: 1.25rem !important;
+  padding: 0.75rem;
+  background: rgba(255, 161, 22, 0.08);
+  border-left: 3px solid #ffa116;
+  border-radius: 4px;
+  color: #e8e8e8;
+  font-size: 0.9rem;
+}
+
+.leetcode-gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.leetcode-gate-label {
+  font-size: 0.9rem;
+  color: #b0b0b0;
+}
+
+.leetcode-gate-input {
+  padding: 0.75rem 1rem;
+  background: #0f0f0f;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  color: #e8e8e8;
+  font-size: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.leetcode-gate-input::placeholder {
+  color: #666;
+}
+
+.leetcode-gate-input:focus {
+  outline: none;
+  border-color: #ffa116;
+}
+
+.leetcode-gate-error {
+  margin: 0;
+  color: #ff6b6b;
+  font-size: 0.9rem;
+}
+
+.leetcode-gate-verify-msg {
+  margin: 0.75rem 0 0 0;
+  font-size: 0.95rem;
+}
+
+.leetcode-gate-verify-msg--tomorrow {
+  color: #00b8a3;
+  background: rgba(0, 184, 163, 0.1);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  border-left: 3px solid #00b8a3;
+}
+
+.leetcode-gate-hint {
+  margin: 0;
+  color: #00b8a3;
+  font-size: 0.85rem;
+}
+
+.leetcode-gate-submit {
+  margin-top: 0.5rem;
+  padding: 0.85rem 1.5rem;
+  background: #ffa116;
+  color: #0f0f0f;
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.leetcode-gate-submit:hover {
+  background: #ffb84d;
+}
+
+.leetcode-gate-editor-section {
+  margin-top: 1.25rem;
+}
+
+.leetcode-gate-code {
+  width: 100%;
+  min-height: 320px;
+  padding: 1rem;
+  background: #0f0f0f;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  color: #e8e8e8;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.leetcode-gate-code:focus {
+  outline: none;
+  border-color: #ffa116;
+}
+
+.leetcode-gate-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.leetcode-gate-btn {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.leetcode-gate-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.leetcode-gate-btn--run {
+  background: #2d2d2d;
+  color: #e8e8e8;
+}
+
+.leetcode-gate-btn--run:hover:not(:disabled) {
+  background: #3d3d3d;
+}
+
+.leetcode-gate-btn--submit {
+  background: #ffa116;
+  color: #0f0f0f;
+}
+
+.leetcode-gate-btn--submit:hover:not(:disabled) {
+  background: #ffb84d;
+}
+
+.leetcode-gate-output {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.leetcode-gate-output--ok {
+  background: rgba(0, 184, 163, 0.1);
+  border: 1px solid rgba(0, 184, 163, 0.3);
+  color: #00b8a3;
+}
+
+.leetcode-gate-output--err {
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: #ff6b6b;
+}
+
+.leetcode-gate-output pre {
+  margin: 0;
+}
+
+.leetcode-gate-output-stderr {
+  margin-top: 0.5rem;
+  color: #ff8a80;
+}
+
+@media (max-width: 768px) {
+  .leetcode-gate-main {
+    padding: 1.25rem 1rem;
+  }
+
+  .leetcode-gate-card {
+    padding: 1.25rem 1.25rem;
+  }
+
+  .leetcode-gate-problem-title {
+    font-size: 1.15rem;
+  }
+}

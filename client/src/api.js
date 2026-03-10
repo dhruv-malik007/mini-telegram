@@ -80,6 +80,59 @@ export async function getMe() {
   return res.json();
 }
 
+/** Run C++ code (no DB update). Returns { ok, stdout, stderr, error }. */
+export async function runCodeChallenge(code, stdin) {
+  const res = await fetch(getApiUrl('/api/code-challenge/run'), {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ code: code || '', stdin: stdin || undefined }),
+  });
+  if (res.status === 401) {
+    const e = new Error('Unauthorized');
+    e.status = 401;
+    throw e;
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/** Check if code challenge (secret) is configured on the server. No auth. Returns { configured: boolean }. */
+export async function getCodeChallengeStatus() {
+  const res = await fetch(getApiUrl('/api/code-challenge/status'));
+  if (!res.ok) return { configured: false };
+  const data = await res.json().catch(() => ({}));
+  return { configured: !!data.configured };
+}
+
+/** Verify secret in code. Returns { passed, message?, tryAgainTomorrow?, alreadyPassed? }. */
+export async function verifyCodeChallenge(code) {
+  const url = getApiUrl('/api/code-challenge/verify');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ code: code || '' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    const e = new Error('Session expired. Please log in again.');
+    e.status = 401;
+    throw e;
+  }
+  if (res.status === 405) {
+    throw new Error('Server returned wrong method. Try refreshing the page.');
+  }
+  if (res.status === 503) {
+    throw new Error(data.error || 'Code challenge not configured on server.');
+  }
+  if (res.status === 404) {
+    throw new Error(`Request failed (404). Is the server running at ${getApiUrl('')}? Set CODE_CHALLENGE_MAIN_PASSWORD in server .env and restart.`);
+  }
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Request failed (${res.status}). Check that the server is running.`);
+  }
+  return data;
+}
+
 export async function updateMe({ about, display_name }) {
   const res = await fetch(getApiUrl('/api/me'), {
     method: 'PATCH',
