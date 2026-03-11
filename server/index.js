@@ -766,6 +766,39 @@ io.on('connection', (socket) => {
     } catch (_) {}
   });
 
+  // Voice call signaling (relay only; WebRTC is peer-to-peer)
+  function relayToUser(toUserId, event, payload) {
+    if (typeof toUserId !== 'number' || toUserId === socket.userId) return;
+    const recipientSockets = onlineByUserId.get(toUserId);
+    if (recipientSockets) {
+      recipientSockets.forEach((sid) => io.to(sid).emit(event, { fromUserId: socket.userId, ...payload }));
+    }
+  }
+
+  socket.on('voice_call_offer', (payload) => {
+    const { toUserId, offer } = payload || {};
+    if (!socket.userId || typeof toUserId !== 'number' || !offer) return;
+    relayToUser(toUserId, 'voice_call_offer', { offer });
+  });
+
+  socket.on('voice_call_answer', (payload) => {
+    const { toUserId, answer } = payload || {};
+    if (!socket.userId || typeof toUserId !== 'number' || !answer) return;
+    relayToUser(toUserId, 'voice_call_answer', { answer });
+  });
+
+  socket.on('voice_call_ice', (payload) => {
+    const { toUserId, candidate } = payload || {};
+    if (!socket.userId || typeof toUserId !== 'number') return;
+    relayToUser(toUserId, 'voice_call_ice', { candidate });
+  });
+
+  socket.on('voice_call_hangup', (payload) => {
+    const toUserId = payload && typeof payload.toUserId === 'number' ? payload.toUserId : null;
+    if (!socket.userId || !toUserId) return;
+    relayToUser(toUserId, 'voice_call_hangup', {});
+  });
+
   socket.on('disconnect', () => {
     if (socket.userId && onlineByUserId.has(socket.userId)) {
       onlineByUserId.get(socket.userId).delete(socket.id);

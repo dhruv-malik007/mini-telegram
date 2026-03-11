@@ -193,6 +193,12 @@ export default function Conversation({
   const loadMoreRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const emitTypingRef = useRef(null);
+  // Voice call: null | 'calling' | 'incoming' | 'connected'
+  const [callStatus, setCallStatus] = useState(null);
+  const [incomingOffer, setIncomingOffer] = useState(null); // { fromUserId, offer }
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   useEffect(() => {
     if (!socket || !otherUser) return;
@@ -254,6 +260,126 @@ export default function Conversation({
       if (emitTypingRef.current) clearTimeout(emitTypingRef.current);
     };
   }, []);
+
+  // Voice call: cleanup peer connection and stream
+  const closeVoiceCall = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+    setCallStatus(null);
+    setIncomingOffer(null);
+  }, []);
+
+  const startVoiceCall = useCallback(async () => {
+    if (!socket || !otherUser || callStatus) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      pc.ontrack = (e) => {
+        if (remoteAudioRef.current && e.streams?.[0]) remoteAudioRef.current.srcObject = e.streams[0];
+      };
+      pc.onicecandidate = (e) => {
+        if (e.candidate && socket) socket.emit('voice_call_ice', { toUserId: otherUser.id, candidate: e.candidate });
+      };
+      peerConnectionRef.current = pc;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('voice_call_offer', { toUserId: otherUser.id, offer });
+      setCallStatus('calling');
+    } catch (err) {
+      window.alert(err?.message || 'Could not access microphone');
+      closeVoiceCall();
+    }
+  }, [socket, otherUser?.id, callStatus, closeVoiceCall]);
+
+  const acceptVoiceCall = useCallback(async () => {
+    const { fromUserId, offer } = incomingOffer || {};
+    if (!socket || !otherUser || fromUserId !== otherUser.id || !offer) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      pc.ontrack = (e) => {
+        if (remoteAudioRef.current && e.streams?.[0]) remoteAudioRef.current.srcObject = e.streams[0];
+      };
+      pc.onicecandidate = (e) => {
+        if (e.candidate && socket) socket.emit('voice_call_ice', { toUserId: otherUser.id, candidate: e.candidate });
+      };
+      peerConnectionRef.current = pc;
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('voice_call_answer', { toUserId: otherUser.id, answer });
+      setIncomingOffer(null);
+      setCallStatus('connected');
+    } catch (err) {
+      window.alert(err?.message || 'Could not start call');
+      closeVoiceCall();
+    }
+  }, [socket, otherUser, incomingOffer, closeVoiceCall]);
+
+  const declineVoiceCall = useCallback(() => {
+    if (incomingOffer && socket && otherUser) {
+      socket.emit('voice_call_hangup', { toUserId: otherUser.id });
+    }
+    setIncomingOffer(null);
+    setCallStatus(null);
+  }, [socket, otherUser?.id, incomingOffer]);
+
+  const hangUpVoiceCall = useCallback(() => {
+    if (socket && otherUser) socket.emit('voice_call_hangup', { toUserId: otherUser.id });
+    closeVoiceCall();
+  }, [socket, otherUser?.id, closeVoiceCall]);
+
+  // Voice call socket listeners
+  useEffect(() => {
+    if (!socket || !otherUser) return;
+    const handleOffer = ({ fromUserId, offer }) => {
+      if (fromUserId !== otherUser.id) return;
+      setIncomingOffer({ fromUserId, offer });
+      setCallStatus('incoming');
+    };
+    const handleAnswer = ({ fromUserId, answer }) => {
+      if (fromUserId !== otherUser.id || !peerConnectionRef.current) return;
+      peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer)).catch(() => {});
+      setCallStatus('connected');
+    };
+    const handleIce = ({ fromUserId, candidate }) => {
+      if (fromUserId !== otherUser.id || !peerConnectionRef.current || !candidate) return;
+      peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+    };
+    const handleHangup = ({ fromUserId }) => {
+      if (fromUserId !== otherUser.id) return;
+      closeVoiceCall();
+    };
+    socket.on('voice_call_offer', handleOffer);
+    socket.on('voice_call_answer', handleAnswer);
+    socket.on('voice_call_ice', handleIce);
+    socket.on('voice_call_hangup', handleHangup);
+    return () => {
+      socket.off('voice_call_offer', handleOffer);
+      socket.off('voice_call_answer', handleAnswer);
+      socket.off('voice_call_ice', handleIce);
+      socket.off('voice_call_hangup', handleHangup);
+    };
+  }, [socket, otherUser?.id, closeVoiceCall]);
+
+  // Cleanup voice call on unmount or when switching chat
+  useEffect(() => {
+    return () => { closeVoiceCall(); };
+  }, [otherUser?.id, closeVoiceCall]);
 
   const handleLoadMore = useCallback(() => {
     if (!otherUser || !onLoadMore || !hasMoreMessages || loadingMore || !messages.length) return;
@@ -425,6 +551,16 @@ export default function Conversation({
           </span>
         </div>
         <div className="conversation-header-actions">
+          <button
+            type="button"
+            className="conversation-call-btn"
+            onClick={startVoiceCall}
+            disabled={!!callStatus || !onlineUserIds?.has(otherUser.id)}
+            title="Voice call"
+            aria-label="Start voice call"
+          >
+            <span className="conversation-call-icon" aria-hidden>📞</span>
+          </button>
           {onDeleteChat && (
             <button type="button" className="btn-delete-chat" onClick={onDeleteChat} title="Delete chat">
               Delete chat
@@ -437,6 +573,32 @@ export default function Conversation({
           )}
         </div>
       </header>
+
+      {callStatus && (
+        <div className="voice-call-bar">
+          {callStatus === 'calling' && (
+            <>
+              <span className="voice-call-text">Calling {(otherUser.display_name || otherUser.username)}…</span>
+              <button type="button" className="voice-call-hangup" onClick={hangUpVoiceCall} aria-label="Cancel call">Hang up</button>
+            </>
+          )}
+          {callStatus === 'incoming' && (
+            <>
+              <span className="voice-call-text">Incoming call from {(otherUser.display_name || otherUser.username)}</span>
+              <button type="button" className="voice-call-accept" onClick={acceptVoiceCall} aria-label="Accept">Accept</button>
+              <button type="button" className="voice-call-hangup" onClick={declineVoiceCall} aria-label="Decline">Decline</button>
+            </>
+          )}
+          {callStatus === 'connected' && (
+            <>
+              <span className="voice-call-text voice-call-connected">● Voice call with {(otherUser.display_name || otherUser.username)}</span>
+              <button type="button" className="voice-call-hangup" onClick={hangUpVoiceCall} aria-label="Hang up">Hang up</button>
+            </>
+          )}
+        </div>
+      )}
+
+      <audio ref={remoteAudioRef} autoPlay playsInline aria-hidden />
 
       <div className="conversation-messages" ref={listRef}>
         {hasMoreMessages && (
