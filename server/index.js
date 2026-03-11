@@ -776,9 +776,9 @@ io.on('connection', (socket) => {
   }
 
   socket.on('voice_call_offer', (payload) => {
-    const { toUserId, offer } = payload || {};
+    const { toUserId, offer, video } = payload || {};
     if (!socket.userId || typeof toUserId !== 'number' || !offer) return;
-    relayToUser(toUserId, 'voice_call_offer', { offer });
+    relayToUser(toUserId, 'voice_call_offer', { offer, video: !!video });
   });
 
   socket.on('voice_call_answer', (payload) => {

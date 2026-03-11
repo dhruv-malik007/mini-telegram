@@ -25,6 +25,26 @@ function formatLastSeen(ts) {
 
 const EDIT_WINDOW_SEC = 15 * 60;
 
+function getMediaErrorMessage(err, forVideo = false) {
+  const name = err?.name;
+  const msg = err?.message?.trim() || '';
+  if (name === 'NotAllowedError' || msg.toLowerCase().includes('permission')) {
+    return forVideo
+      ? 'Camera (or microphone) access was denied. Allow access in your browser settings or system permissions and try again.'
+      : 'Microphone access was denied. Allow access in your browser settings and try again.';
+  }
+  if (name === 'NotFoundError' || msg.toLowerCase().includes('not found')) {
+    return forVideo
+      ? 'No camera or microphone found. Connect a webcam and microphone, then try again. You can use the voice call (📞) if you only have a microphone.'
+      : 'No microphone found. Connect a microphone and try again.';
+  }
+  if (name === 'NotReadableError' || msg.toLowerCase().includes('could not start') || msg.toLowerCase().includes('videoinput failed')) {
+    return 'Camera or microphone is in use by another app, or the device could not be opened. Close other apps using the camera and try again.';
+  }
+  if (msg) return msg;
+  return forVideo ? 'Could not access camera or microphone.' : 'Could not access microphone.';
+}
+
 /* Match both /reel/ID and /p/ID (posts) */
 const INSTAGRAM_REEL_REGEX = /https?:\/\/(www\.)?instagram\.com\/(reel|p)\/([A-Za-z0-9_-]+)(\/?\S*)?/gi;
 
@@ -193,12 +213,16 @@ export default function Conversation({
   const loadMoreRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const emitTypingRef = useRef(null);
-  // Voice call: null | 'calling' | 'incoming' | 'connected'
+  // Voice/video call: null | 'calling' | 'incoming' | 'connected'
   const [callStatus, setCallStatus] = useState(null);
-  const [incomingOffer, setIncomingOffer] = useState(null); // { fromUserId, offer }
+  const [incomingOffer, setIncomingOffer] = useState(null); // { fromUserId, offer, video? }
+  const [isVideoCall, setIsVideoCall] = useState(false);
+  const [localStream, setLocalStream] = useState(null); // for video preview
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const isVideoCallRef = useRef(false);
 
   useEffect(() => {
     if (!socket || !otherUser) return;
@@ -261,7 +285,7 @@ export default function Conversation({
     };
   }, []);
 
-  // Voice call: cleanup peer connection and stream
+  // Voice/video call: cleanup peer connection and streams
   const closeVoiceCall = useCallback(() => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
@@ -271,52 +295,84 @@ export default function Conversation({
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
+    isVideoCallRef.current = false;
     setCallStatus(null);
     setIncomingOffer(null);
+    setIsVideoCall(false);
+    setLocalStream(null);
   }, []);
+
+  const createPcWithHandlers = useCallback((stream, otherId, isVideo) => {
+    isVideoCallRef.current = isVideo;
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    pc.ontrack = (e) => {
+      const stream = e.streams?.[0];
+      if (!stream) return;
+      if (isVideoCallRef.current && remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream;
+      } else if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = stream;
+      }
+    };
+    pc.onicecandidate = (e) => {
+      if (e.candidate && socket) socket.emit('voice_call_ice', { toUserId: otherId, candidate: e.candidate });
+    };
+    return pc;
+  }, [socket]);
 
   const startVoiceCall = useCallback(async () => {
     if (!socket || !otherUser || callStatus) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      });
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-      pc.ontrack = (e) => {
-        if (remoteAudioRef.current && e.streams?.[0]) remoteAudioRef.current.srcObject = e.streams[0];
-      };
-      pc.onicecandidate = (e) => {
-        if (e.candidate && socket) socket.emit('voice_call_ice', { toUserId: otherUser.id, candidate: e.candidate });
-      };
+      const pc = createPcWithHandlers(stream, otherUser.id, false);
       peerConnectionRef.current = pc;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit('voice_call_offer', { toUserId: otherUser.id, offer });
       setCallStatus('calling');
     } catch (err) {
-      window.alert(err?.message || 'Could not access microphone');
+      window.alert(getMediaErrorMessage(err, false));
       closeVoiceCall();
     }
-  }, [socket, otherUser?.id, callStatus, closeVoiceCall]);
+  }, [socket, otherUser?.id, callStatus, closeVoiceCall, createPcWithHandlers]);
+
+  const startVideoCall = useCallback(async () => {
+    if (!socket || !otherUser || callStatus) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setIsVideoCall(true);
+      const pc = createPcWithHandlers(stream, otherUser.id, true);
+      peerConnectionRef.current = pc;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('voice_call_offer', { toUserId: otherUser.id, offer, video: true });
+      setCallStatus('calling');
+    } catch (err) {
+      window.alert(getMediaErrorMessage(err, true));
+      closeVoiceCall();
+    }
+  }, [socket, otherUser?.id, callStatus, closeVoiceCall, createPcWithHandlers]);
 
   const acceptVoiceCall = useCallback(async () => {
-    const { fromUserId, offer } = incomingOffer || {};
+    const { fromUserId, offer, video } = incomingOffer || {};
     if (!socket || !otherUser || fromUserId !== otherUser.id || !offer) return;
+    const withVideo = !!video;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia(
+        withVideo ? { audio: true, video: true } : { audio: true }
+      );
       localStreamRef.current = stream;
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      });
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-      pc.ontrack = (e) => {
-        if (remoteAudioRef.current && e.streams?.[0]) remoteAudioRef.current.srcObject = e.streams[0];
-      };
-      pc.onicecandidate = (e) => {
-        if (e.candidate && socket) socket.emit('voice_call_ice', { toUserId: otherUser.id, candidate: e.candidate });
-      };
+      if (withVideo) {
+        setLocalStream(stream);
+        setIsVideoCall(true);
+      }
+      const pc = createPcWithHandlers(stream, otherUser.id, withVideo);
       peerConnectionRef.current = pc;
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
@@ -325,10 +381,10 @@ export default function Conversation({
       setIncomingOffer(null);
       setCallStatus('connected');
     } catch (err) {
-      window.alert(err?.message || 'Could not start call');
+      window.alert(getMediaErrorMessage(err, withVideo));
       closeVoiceCall();
     }
-  }, [socket, otherUser, incomingOffer, closeVoiceCall]);
+  }, [socket, otherUser, incomingOffer, closeVoiceCall, createPcWithHandlers]);
 
   const declineVoiceCall = useCallback(() => {
     if (incomingOffer && socket && otherUser) {
@@ -346,9 +402,9 @@ export default function Conversation({
   // Voice call socket listeners
   useEffect(() => {
     if (!socket || !otherUser) return;
-    const handleOffer = ({ fromUserId, offer }) => {
+    const handleOffer = ({ fromUserId, offer, video }) => {
       if (fromUserId !== otherUser.id) return;
-      setIncomingOffer({ fromUserId, offer });
+      setIncomingOffer({ fromUserId, offer, video: !!video });
       setCallStatus('incoming');
     };
     const handleAnswer = ({ fromUserId, answer }) => {
@@ -561,6 +617,16 @@ export default function Conversation({
           >
             <span className="conversation-call-icon" aria-hidden>📞</span>
           </button>
+          <button
+            type="button"
+            className="conversation-call-btn conversation-call-btn-video"
+            onClick={startVideoCall}
+            disabled={!!callStatus || !onlineUserIds?.has(otherUser.id)}
+            title="Video call"
+            aria-label="Start video call"
+          >
+            <span className="conversation-call-icon" aria-hidden>📹</span>
+          </button>
           {onDeleteChat && (
             <button type="button" className="btn-delete-chat" onClick={onDeleteChat} title="Delete chat">
               Delete chat
@@ -578,22 +644,38 @@ export default function Conversation({
         <div className="voice-call-bar">
           {callStatus === 'calling' && (
             <>
-              <span className="voice-call-text">Calling {(otherUser.display_name || otherUser.username)}…</span>
+              <span className="voice-call-text">{isVideoCall ? 'Starting video call' : 'Calling'} {(otherUser.display_name || otherUser.username)}…</span>
               <button type="button" className="voice-call-hangup" onClick={hangUpVoiceCall} aria-label="Cancel call">Hang up</button>
             </>
           )}
           {callStatus === 'incoming' && (
             <>
-              <span className="voice-call-text">Incoming call from {(otherUser.display_name || otherUser.username)}</span>
+              <span className="voice-call-text">{incomingOffer?.video ? 'Incoming video call from' : 'Incoming call from'} {(otherUser.display_name || otherUser.username)}</span>
               <button type="button" className="voice-call-accept" onClick={acceptVoiceCall} aria-label="Accept">Accept</button>
               <button type="button" className="voice-call-hangup" onClick={declineVoiceCall} aria-label="Decline">Decline</button>
             </>
           )}
-          {callStatus === 'connected' && (
+          {callStatus === 'connected' && !isVideoCall && (
             <>
               <span className="voice-call-text voice-call-connected">● Voice call with {(otherUser.display_name || otherUser.username)}</span>
               <button type="button" className="voice-call-hangup" onClick={hangUpVoiceCall} aria-label="Hang up">Hang up</button>
             </>
+          )}
+        </div>
+      )}
+
+      {callStatus && isVideoCall && (callStatus === 'calling' || callStatus === 'connected') && (
+        <div className="video-call-area">
+          <div className="video-call-remote">
+            <video ref={remoteVideoRef} autoPlay playsInline className="video-call-video" />
+            <span className="video-call-label video-call-label-remote">{(otherUser.display_name || otherUser.username)}</span>
+          </div>
+          <div className="video-call-local">
+            <video srcObject={localStream ?? undefined} muted autoPlay playsInline className="video-call-video video-call-video-local" />
+            <span className="video-call-label">You</span>
+          </div>
+          {callStatus === 'connected' && (
+            <button type="button" className="video-call-hangup-btn" onClick={hangUpVoiceCall} aria-label="Hang up">Hang up</button>
           )}
         </div>
       )}
