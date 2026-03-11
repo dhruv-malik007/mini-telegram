@@ -695,10 +695,21 @@ export default function Conversation({
           </div>
           <div className="video-call-local">
             <video srcObject={localStream ?? undefined} muted autoPlay playsInline className="video-call-video video-call-video-local" />
+            {callVideoOff && <span className="video-call-camera-off-label">Camera off</span>}
             <span className="video-call-label">You</span>
           </div>
           {callStatus === 'connected' && (
-            <button type="button" className="video-call-hangup-btn" onClick={hangUpVoiceCall} aria-label="Hang up">Hang up</button>
+            <div className="video-call-controls">
+              <button type="button" className={`video-call-control-btn ${callMuted ? 'video-call-control-btn--on' : ''}`} onClick={toggleMute} aria-label={callMuted ? 'Unmute' : 'Mute'} title={callMuted ? 'Unmute' : 'Mute'}>
+                <span className="video-call-control-icon" aria-hidden>{callMuted ? '🔇' : '🎤'}</span>
+                <span className="video-call-control-label">{callMuted ? 'Unmute' : 'Mute'}</span>
+              </button>
+              <button type="button" className={`video-call-control-btn ${callVideoOff ? 'video-call-control-btn--on' : ''}`} onClick={toggleVideo} aria-label={callVideoOff ? 'Turn camera on' : 'Turn camera off'} title={callVideoOff ? 'Turn camera on' : 'Turn camera off'}>
+                <span className="video-call-control-icon" aria-hidden>{callVideoOff ? '📷' : '📹'}</span>
+                <span className="video-call-control-label">{callVideoOff ? 'Camera on' : 'Camera off'}</span>
+              </button>
+              <button type="button" className="video-call-hangup-btn" onClick={hangUpVoiceCall} aria-label="Hang up">Hang up</button>
+            </div>
           )}
         </div>
       )}

@@ -143,6 +143,26 @@
   background: rgba(0, 0, 0, 0.35);
 }
 
+.voice-call-mute {
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-weight: 500;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.voice-call-mute:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.voice-call-mute.voice-call-mute--on {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 .video-call-area {
   flex: 1 1 0;
   min-height: 200px;
@@ -205,11 +225,51 @@
   font-size: 0.85rem;
 }
 
-.video-call-hangup-btn {
+.video-call-controls {
   position: absolute;
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 3;
+}
+
+.video-call-control-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.video-call-control-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.video-call-control-btn.video-call-control-btn--on {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.video-call-control-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.video-call-control-label {
+  white-space: nowrap;
+}
+
+.video-call-hangup-btn {
   padding: 0.5rem 1.25rem;
   border: none;
   border-radius: 8px;
@@ -218,12 +278,25 @@
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
-  z-index: 3;
   transition: background 0.15s;
 }
 
 .video-call-hangup-btn:hover {
   background: #a93226;
+}
+
+.video-call-camera-off-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .conversation-header {
@@ -327,7 +400,8 @@
   }
 
   .voice-call-accept,
-  .voice-call-hangup {
+  .voice-call-hangup,
+  .voice-call-mute {
     padding: 0.35rem 0.7rem;
     font-size: 0.8rem;
   }
@@ -343,8 +417,21 @@
     bottom: 8px;
   }
 
-  .video-call-hangup-btn {
+  .video-call-controls {
     bottom: 12px;
+    gap: 0.35rem;
+  }
+
+  .video-call-control-btn {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.65rem;
+  }
+
+  .video-call-control-icon {
+    font-size: 1.1rem;
+  }
+
+  .video-call-hangup-btn {
     padding: 0.45rem 1rem;
     font-size: 0.85rem;
   }
