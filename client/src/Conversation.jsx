@@ -218,6 +218,8 @@ export default function Conversation({
   const [incomingOffer, setIncomingOffer] = useState(null); // { fromUserId, offer, video? }
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [localStream, setLocalStream] = useState(null); // for video preview
+  const [callMuted, setCallMuted] = useState(false);
+  const [callVideoOff, setCallVideoOff] = useState(false);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -300,6 +302,24 @@ export default function Conversation({
     setIncomingOffer(null);
     setIsVideoCall(false);
     setLocalStream(null);
+    setCallMuted(false);
+    setCallVideoOff(false);
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const audioTracks = stream.getAudioTracks();
+    audioTracks.forEach((t) => { t.enabled = !t.enabled; });
+    setCallMuted((prev) => !prev);
+  }, []);
+
+  const toggleVideo = useCallback(() => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const videoTracks = stream.getVideoTracks();
+    videoTracks.forEach((t) => { t.enabled = !t.enabled; });
+    setCallVideoOff((prev) => !prev);
   }, []);
 
   const createPcWithHandlers = useCallback((stream, otherId, isVideo) => {
@@ -658,6 +678,9 @@ export default function Conversation({
           {callStatus === 'connected' && !isVideoCall && (
             <>
               <span className="voice-call-text voice-call-connected">● Voice call with {(otherUser.display_name || otherUser.username)}</span>
+              <button type="button" className={`voice-call-mute ${callMuted ? 'voice-call-mute--on' : ''}`} onClick={toggleMute} aria-label={callMuted ? 'Unmute' : 'Mute'} title={callMuted ? 'Unmute' : 'Mute'}>
+                {callMuted ? 'Unmute' : 'Mute'}
+              </button>
               <button type="button" className="voice-call-hangup" onClick={hangUpVoiceCall} aria-label="Hang up">Hang up</button>
             </>
           )}

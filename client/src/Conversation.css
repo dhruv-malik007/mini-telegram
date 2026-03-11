@@ -7,6 +7,14 @@
   background: var(--chat-bg);
 }
 
+/* Mobile: ensure conversation fills viewport and form sticks to bottom */
+@media (max-width: 768px) {
+  .conversation {
+    min-height: 0;
+    max-height: 100%;
+  }
+}
+
 .conversation--loading .conversation-back {
   display: flex;
 }

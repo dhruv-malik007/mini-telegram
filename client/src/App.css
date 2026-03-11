@@ -396,10 +396,18 @@
 
 /* Mobile: single-pane layout — show list or conversation (or admin), not both */
 @media (max-width: 768px) {
+  .app-wrapper {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
   .app {
     flex-direction: column;
-    min-height: 100vh;
-    min-height: 100dvh;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .app .sidebar {
@@ -408,12 +416,14 @@
     max-width: 100%;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
   }
 
   .app .main {
     display: none;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
   }
 
   .app.app--main-open .sidebar {
@@ -422,9 +432,11 @@
 
   .app.app--main-open .main {
     display: flex;
+    flex-direction: column;
     width: 100%;
-    height: 100%;
+    flex: 1;
     min-height: 0;
+    overflow: hidden;
   }
 
   .sidebar-header {
