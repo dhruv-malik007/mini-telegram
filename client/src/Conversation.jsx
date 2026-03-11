@@ -222,6 +222,7 @@ export default function Conversation({
   const [callVideoOff, setCallVideoOff] = useState(false);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null); // single stream we add remote tracks to
   const remoteAudioRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isVideoCallRef = useRef(false);
@@ -297,6 +298,10 @@ export default function Conversation({
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach((t) => remoteStreamRef.current.removeTrack(t));
+      remoteStreamRef.current = null;
+    }
     isVideoCallRef.current = false;
     setCallStatus(null);
     setIncomingOffer(null);
@@ -324,17 +329,28 @@ export default function Conversation({
 
   const createPcWithHandlers = useCallback((stream, otherId, isVideo) => {
     isVideoCallRef.current = isVideo;
+    // One remote stream per call: we add tracks as ontrack fires (avoids overwriting when audio/video arrive separately)
+    const remoteStream = new MediaStream();
+    remoteStreamRef.current = remoteStream;
+    if (isVideo && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    } else if (!isVideo && remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+    }
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     pc.ontrack = (e) => {
-      const stream = e.streams?.[0];
-      if (!stream) return;
-      if (isVideoCallRef.current && remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-      } else if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = stream;
+      const track = e.track;
+      if (!track || !remoteStreamRef.current) return;
+      if (remoteStreamRef.current.getTracks().some((t) => t.id === track.id)) return;
+      remoteStreamRef.current.addTrack(track);
+      // If refs weren’t set when we created the PC (e.g. React mount order), set them when first track arrives
+      if (isVideoCallRef.current && remoteVideoRef.current && !remoteVideoRef.current.srcObject) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      } else if (!isVideoCallRef.current && remoteAudioRef.current && !remoteAudioRef.current.srcObject) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current;
       }
     };
     pc.onicecandidate = (e) => {
@@ -451,6 +467,14 @@ export default function Conversation({
       socket.off('voice_call_hangup', handleHangup);
     };
   }, [socket, otherUser?.id, closeVoiceCall]);
+
+  // Attach remote stream to video element when it mounts (e.g. caller’s UI) so both sides show remote video
+  useEffect(() => {
+    if (!isVideoCall || !callStatus || callStatus === 'incoming') return;
+    const stream = remoteStreamRef.current;
+    const el = remoteVideoRef.current;
+    if (el && stream && !el.srcObject) el.srcObject = stream;
+  }, [isVideoCall, callStatus]);
 
   // Cleanup voice call on unmount or when switching chat
   useEffect(() => {
