@@ -33,10 +33,12 @@ async function uploadBuffer(buffer, filename, mimetype) {
   }
 
   const isVideo = /^video\//.test(mimetype || '') || /\.(mp4|webm|mov)$/i.test(filename || '');
-  const resourceType = isVideo ? 'video' : 'image';
+  const isAudio = /^audio\//.test(mimetype || '') || /\.(webm|ogg|mp3|m4a|wav)$/i.test(filename || '');
+  const resourceType = isVideo ? 'video' : isAudio ? 'raw' : 'image';
   const publicId = `chat/${Date.now()}-${Math.random().toString(36).slice(2)}`.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-  const dataUri = `data:${mimetype || (isVideo ? 'video/mp4' : 'image/jpeg')};base64,${buffer.toString('base64')}`;
+  const defaultMime = isVideo ? 'video/mp4' : isAudio ? 'audio/webm' : 'image/jpeg';
+  const dataUri = `data:${mimetype || defaultMime};base64,${buffer.toString('base64')}`;
 
   const result = await cloudinary.uploader.upload(dataUri, {
     resource_type: resourceType,

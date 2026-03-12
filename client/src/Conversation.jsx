@@ -70,9 +70,72 @@ function parseContentWithReels(content) {
   return parts.length ? parts : [{ type: 'text', value: content }];
 }
 
+function VoiceNoteAttachment({ url, isOutgoing }) {
+  const audioRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    const onLoadedMetadata = () => setDuration(el.duration);
+    const onTimeUpdate = () => setCurrentTime(el.currentTime);
+    const onEnded = () => { setIsPlaying(false); setCurrentTime(0); };
+    el.addEventListener('loadedmetadata', onLoadedMetadata);
+    el.addEventListener('timeupdate', onTimeUpdate);
+    el.addEventListener('ended', onEnded);
+    return () => {
+      el.removeEventListener('loadedmetadata', onLoadedMetadata);
+      el.removeEventListener('timeupdate', onTimeUpdate);
+      el.removeEventListener('ended', onEnded);
+    };
+  }, [url]);
+
+  const togglePlay = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().then(() => setIsPlaying(true)).catch(() => {});
+    } else {
+      el.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const formatTime = (s) => {
+    if (!Number.isFinite(s) || s < 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className={`voice-note-attachment ${isOutgoing ? 'voice-note-attachment--outgoing' : ''}`}>
+      <audio ref={audioRef} src={url} preload="metadata" />
+      <button type="button" className="voice-note-play" onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'}>
+        <span className="voice-note-play-icon" aria-hidden>{isPlaying ? '⏸' : '▶'}</span>
+      </button>
+      <div className="voice-note-progress-wrap">
+        <div className="voice-note-progress-bar" style={{ width: `${progress}%` }} />
+      </div>
+      <span className="voice-note-time">{formatTime(isPlaying ? currentTime : currentTime || duration)} / {formatTime(duration) || '0:00'}</span>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="voice-note-download" onClick={(e) => e.stopPropagation()}>
+        Download
+      </a>
+    </div>
+  );
+}
+
 function MessageAttachment({ type, url, isOutgoing, onImageClick }) {
-  const label = type === 'video' ? 'Video' : 'Photo';
+  const label = type === 'video' ? 'Video' : type === 'audio' ? 'Voice note' : 'Photo';
   const isImage = type === 'image';
+  const isAudio = type === 'audio';
+  if (isAudio && url) {
+    return <VoiceNoteAttachment url={url} isOutgoing={isOutgoing} />;
+  }
   return (
     <div className={`message-attachment message-attachment--${type || 'image'} ${isOutgoing ? 'message-attachment--outgoing' : ''}`}>
       {isImage && url ? (
@@ -226,6 +289,14 @@ export default function Conversation({
   const remoteAudioRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const isVideoCallRef = useRef(false);
+  // Voice note recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingStreamRef = useRef(null);
+  const recordingShouldSendRef = useRef(false);
+  const recordingIntervalRef = useRef(null);
 
   useEffect(() => {
     if (!socket || !otherUser) return;
@@ -563,6 +634,70 @@ export default function Conversation({
     }
   }, []);
 
+  const startVoiceNoteRecording = useCallback(async () => {
+    if (isRecording || !otherUser || !onSendMessage) return;
+    setUploadError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      recordingChunksRef.current = chunks;
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+        stream.getTracks().forEach((t) => t.stop());
+        recordingStreamRef.current = null;
+        if (!recordingShouldSendRef.current || chunks.length === 0) {
+          setIsRecording(false);
+          setRecordingElapsed(0);
+          return;
+        }
+        const blob = new Blob(chunks, { type: mime });
+        const ext = mime.includes('webm') ? 'webm' : 'ogg';
+        const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: mime });
+        setUploading(true);
+        try {
+          const { url, type } = await uploadMedia(file);
+          onSendMessage('', replyingTo?.id ?? null, { url, type });
+          setReplyingTo(null);
+        } catch (err) {
+          setUploadError(err.message || 'Upload failed');
+        } finally {
+          setUploading(false);
+          setIsRecording(false);
+          setRecordingElapsed(0);
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start(1000);
+      recordingShouldSendRef.current = false;
+      setIsRecording(true);
+      setRecordingElapsed(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingElapsed((s) => s + 1);
+      }, 1000);
+    } catch (err) {
+      window.alert(getMediaErrorMessage(err, false));
+    }
+  }, [isRecording, otherUser, onSendMessage, replyingTo?.id]);
+
+  const stopVoiceNoteAndSend = useCallback(() => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') return;
+    recordingShouldSendRef.current = true;
+    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current = null;
+  }, []);
+
+  const cancelVoiceNoteRecording = useCallback(() => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') return;
+    recordingShouldSendRef.current = false;
+    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current = null;
+  }, []);
+
   const getReplyMessage = (replyToId) => messages.find((m) => m.id === replyToId);
 
   const handleEdit = (msg) => {
@@ -893,28 +1028,46 @@ export default function Conversation({
           className="conversation-file-input"
           aria-label="Attach photo or video"
         />
-        {attachment && (
+        {attachment && !isRecording && (
           <div className="conversation-attachment-preview">
-            <span className="conversation-attachment-preview-label">{attachment.type === 'video' ? 'Video' : 'Photo'} attached</span>
+            <span className="conversation-attachment-preview-label">{attachment.type === 'video' ? 'Video' : attachment.type === 'audio' ? 'Voice note' : 'Photo'} attached</span>
             <button type="button" className="conversation-attachment-preview-remove" onClick={() => { setAttachment(null); setUploadError(null); }} aria-label="Remove attachment">×</button>
+          </div>
+        )}
+        {isRecording && (
+          <div className="conversation-voice-note-recording">
+            <span className="conversation-voice-note-recording-dot" aria-hidden />
+            <span className="conversation-voice-note-recording-time">
+              {Math.floor(recordingElapsed / 60)}:{(recordingElapsed % 60).toString().padStart(2, '0')}
+            </span>
+            <button type="button" className="conversation-voice-note-cancel" onClick={cancelVoiceNoteRecording} aria-label="Cancel recording">Cancel</button>
+            <button type="button" className="conversation-voice-note-send" onClick={stopVoiceNoteAndSend} aria-label="Send voice note">Send</button>
           </div>
         )}
         {uploadError && <span className="conversation-upload-error">{uploadError}</span>}
         <div className="conversation-form-row">
-          <button type="button" className="conversation-attach" onClick={() => fileInputRef.current?.click()} disabled={uploading} aria-label="Attach file" title="Photo or video">
+          <button type="button" className="conversation-attach" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} aria-label="Attach file" title="Photo or video">
             {uploading ? '…' : '⊕'}
           </button>
           <input
             type="text"
-            placeholder="Type a message..."
+            placeholder={isRecording ? 'Recording…' : 'Type a message...'}
             value={input}
             onChange={handleInputChange}
             className="conversation-input"
             maxLength={10000}
+            disabled={isRecording}
           />
-          <button type="submit" className="conversation-send" disabled={(!input.trim() && !attachment) || uploading} aria-label="Send">
-            <span className="conversation-send-icon">↑</span>
-          </button>
+          {!isRecording ? (
+            <>
+              <button type="button" className="conversation-voice-note-btn" onClick={startVoiceNoteRecording} disabled={uploading} aria-label="Record voice note" title="Voice note">
+                <span className="conversation-voice-note-btn-icon" aria-hidden>🎤</span>
+              </button>
+              <button type="submit" className="conversation-send" disabled={(!input.trim() && !attachment) || uploading} aria-label="Send">
+                <span className="conversation-send-icon">↑</span>
+              </button>
+            </>
+          ) : null}
         </div>
       </form>
     </div>

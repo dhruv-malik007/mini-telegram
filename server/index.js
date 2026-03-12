@@ -56,8 +56,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   fileFilter: (req, file, cb) => {
-    const ok = /^image\//.test(file.mimetype) || /^video\//.test(file.mimetype);
-    cb(ok ? null : new Error('Only images and videos allowed'), ok);
+    const ok = /^image\//.test(file.mimetype) || /^video\//.test(file.mimetype) || /^audio\//.test(file.mimetype);
+    cb(ok ? null : new Error('Only images, videos and audio allowed'), ok);
   },
 });
 
@@ -379,7 +379,9 @@ app.post('/api/upload', authMiddleware, requireCodeChallenge, upload.single('fil
     return res.status(503).json({ error: 'Media upload not configured (set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)' });
   }
   try {
-    const type = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
+    let type = 'video';
+    if (req.file.mimetype.startsWith('image/')) type = 'image';
+    else if (req.file.mimetype.startsWith('audio/')) type = 'audio';
     const { url } = await cloudinary.uploadBuffer(req.file.buffer, req.file.originalname || 'file', req.file.mimetype);
     res.json({ url, type });
   } catch (e) {
@@ -715,7 +717,7 @@ io.on('connection', (socket) => {
     }
     const trimmed = (typeof content === 'string' ? content : '').trim().slice(0, 10000);
     const attUrl = typeof attachmentUrl === 'string' && attachmentUrl.length > 0 ? attachmentUrl.slice(0, 2048) : null;
-    const attType = attachmentType === 'image' || attachmentType === 'video' ? attachmentType : null;
+    const attType = attachmentType === 'image' || attachmentType === 'video' || attachmentType === 'audio' ? attachmentType : null;
     if (!trimmed && !attUrl) return;
     const replyTo = replyToId != null ? parseInt(replyToId, 10) : null;
     try {
@@ -734,7 +736,7 @@ io.on('connection', (socket) => {
       if (VAPID_PUBLIC && VAPID_PRIVATE && row.recipient_id) {
         sendPushToUser(row.recipient_id, {
           title: 'New message',
-          body: trimmed ? trimmed.slice(0, 80) : (row.attachment_type === 'image' ? 'Photo' : row.attachment_type === 'video' ? 'Video' : 'Attachment'),
+          body: trimmed ? trimmed.slice(0, 80) : (row.attachment_type === 'image' ? 'Photo' : row.attachment_type === 'video' ? 'Video' : row.attachment_type === 'audio' ? 'Voice note' : 'Attachment'),
           tag: `msg-${row.id}`,
         }).catch(() => {});
       }

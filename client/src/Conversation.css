@@ -775,6 +775,80 @@
   text-decoration: underline;
 }
 
+/* Voice note in chat (play, progress, duration) */
+.voice-note-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border-radius: 20px;
+  max-width: 280px;
+  margin-bottom: 0.35rem;
+}
+
+.voice-note-attachment--outgoing {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.voice-note-play {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.voice-note-play:hover {
+  opacity: 0.9;
+}
+
+.voice-note-play-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.voice-note-progress-wrap {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.voice-note-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+.voice-note-time {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.voice-note-download {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.voice-note-download:hover {
+  color: var(--accent);
+}
+
 /* Image lightbox */
 .lightbox-overlay {
   position: fixed;
@@ -1239,6 +1313,102 @@
   display: block;
   line-height: 1;
   transform: rotate(-90deg);
+}
+
+/* Voice note recording bar */
+.conversation-voice-note-recording {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(108, 92, 231, 0.15);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  margin-bottom: 0.4rem;
+}
+
+.conversation-voice-note-recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c0392b;
+  animation: voice-note-recording-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-note-recording-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+.conversation-voice-note-recording-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  min-width: 3ch;
+}
+
+.conversation-voice-note-cancel {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conversation-voice-note-cancel:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.conversation-voice-note-send {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.conversation-voice-note-send:hover {
+  background: var(--accent-hover);
+}
+
+.conversation-voice-note-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conversation-voice-note-btn:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--accent);
+}
+
+.conversation-voice-note-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.conversation-voice-note-btn-icon {
+  line-height: 1;
 }
 
 /* Reel in-app modal (Instagram official embed) */
