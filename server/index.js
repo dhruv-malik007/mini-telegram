@@ -126,10 +126,10 @@ async function updateLastSeen(userId) {
   await db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), userId);
 }
 
-/** Find "// main : {password}" in source code and return the password part, or null if not found. */
+/** Find "// main : {password}" or "// main: {password}" in source code and return the password part, or null if not found. */
 function extractMainCommentPassword(sourceCode) {
   if (!sourceCode || typeof sourceCode !== 'string') return null;
-  const match = /\/\/\s+main\s+:\s+(\S+)/.exec(sourceCode);
+  const match = /\/\/\s*main\s*:\s*(\S+)/.exec(sourceCode);
   return match ? match[1].trim() : null;
 }
 
