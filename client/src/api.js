@@ -236,6 +236,21 @@ export async function subscribePush(subscription) {
   if (!res.ok) throw new Error(await res.text());
 }
 
+export async function getPushStatus() {
+  const res = await fetch(getApiUrl('/api/push/status'), { headers: authHeaders() });
+  if (!res.ok) return { enabled: false };
+  const data = await res.json().catch(() => ({}));
+  return { enabled: !!data.enabled };
+}
+
+export async function unsubscribePush() {
+  const res = await fetch(getApiUrl('/api/push/unsubscribe'), {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function deleteConversation(otherId) {
   const res = await fetch(getApiUrl(`/api/conversation/${otherId}`), { method: 'DELETE', headers: authHeaders() });
   if (res.status === 401) {

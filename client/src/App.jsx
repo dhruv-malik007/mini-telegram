@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteUser, setUserAdmin, getVapidPublic, subscribePush } from './api';
+import { getUsers, login, register, getConversation, getMe, updateMe, deleteConversation, getAdminUsers, deleteUser, setUserAdmin, getVapidPublic, subscribePush, getPushStatus, unsubscribePush } from './api';
 import { getSocketUrl } from './config';
 import Login from './Login';
 import ChatList from './ChatList';
@@ -38,6 +38,10 @@ function App() {
           setAuth((prev) => (prev ? { ...prev, user } : null));
           setProfileAbout(user?.about ?? '');
         }).catch(() => {});
+        // Load push status so we show "Notifications on" / "Enable notifications" correctly
+        getPushStatus().then(({ enabled }) => {
+          if (enabled) setPushStatus('enabled');
+        }).catch(() => {});
       } catch (_) {}
     }
     setLoading(false);
@@ -48,11 +52,18 @@ function App() {
     localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
     const socketUrl = getSocketUrl();
     const s = socketUrl ? io(socketUrl, { path: '/socket.io', transports: ['websocket', 'polling'] }) : io({ path: '/socket.io', transports: ['websocket', 'polling'] });
-    s.on('connect', () => s.emit('join', auth.token));
+    s.on('connect', () => {
+      s.emit('join', auth.token);
+    });
     s.on('online_users', (ids) => setOnlineUserIds(new Set(Array.isArray(ids) ? ids : [])));
     setSocket(s);
     return () => s.disconnect();
   }, [auth?.token]);
+
+  // Tell server which conversation we're viewing (so it can skip push when we're in that chat)
+  useEffect(() => {
+    if (socket && auth) socket.emit('viewing', { otherUserId: selectedUserId ?? null });
+  }, [socket, selectedUserId, auth]);
 
   useEffect(() => {
     if (!auth || !auth.user?.code_challenge_passed) return;
@@ -147,6 +158,16 @@ function App() {
     } catch (e) {
       setPushStatus('error');
       console.error('Push registration failed', e);
+    }
+  }, [auth]);
+
+  const handleDisablePush = useCallback(async () => {
+    if (!auth) return;
+    try {
+      await unsubscribePush();
+      setPushStatus(null);
+    } catch (e) {
+      console.error('Disable notifications failed', e);
     }
   }, [auth]);
 
@@ -324,7 +345,14 @@ function App() {
             Enable notifications
           </button>
         )}
-        {pushStatus === 'enabled' && <span className="sidebar-push-status">Notifications on</span>}
+        {pushStatus === 'enabled' && (
+          <div className="sidebar-push-status-wrap">
+            <span className="sidebar-push-status">Notifications on</span>
+            <button type="button" className="sidebar-push-disable" onClick={handleDisablePush} title="Turn off notifications">
+              Disable
+            </button>
+          </div>
+        )}
       </aside>
       {showProfileEdit && (
         <div className="profile-modal-overlay" onClick={() => setShowProfileEdit(false)}>

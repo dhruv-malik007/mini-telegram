@@ -1,4 +1,5 @@
 /* Service worker for Web Push (Mini-Telegram) */
+/* Sound: uses your device's default notification sound (no custom sound in Web Push). */
 self.addEventListener('push', (event) => {
   let data = { title: 'Mini Telegram', body: '' };
   try {
@@ -8,6 +9,8 @@ self.addEventListener('push', (event) => {
     body: data.body || 'New message',
     tag: data.tag || 'mini-telegram-push',
     data: { url: data.url || '/' },
+    silent: false, /* play system default notification sound */
+    vibrate: [200, 100, 200], /* short vibration pattern on supported devices (e.g. Android) */
   };
   event.waitUntil(self.registration.showNotification(data.title || 'Mini Telegram', options));
 });

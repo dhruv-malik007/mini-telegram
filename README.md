@@ -107,27 +107,16 @@ To let users share photos and videos in chat, use [Cloudinary](https://cloudinar
 
 If configured, the **Attach** button (⊕) lets users send images and videos. The share link is stored in the DB; recipients see inline image previews.
 
-### Optional: Push notifications
-
-To send browser push notifications when the user gets a new message:
-
-1. Generate VAPID keys (one-time):  
-   `npx web-push generate-vapid-keys`
-2. Set in `.env` (or your host’s environment):
-   - `VAPID_PUBLIC_KEY` or `VAPID_PUBLIC` = the public key
-   - `VAPID_PRIVATE_KEY` or `VAPID_PRIVATE` = the private key
-
-If both are set, users can click **Enable notifications** in the sidebar to receive push notifications when they’re not in the app.
-
 ### Optional: Code challenge (secret in code)
+
 
 After **login**, users must solve a static Two Sum problem in C++ and include a **secret password** in their code (e.g. `// main: mysecret` or `/* main: mysecret */`). Set **`CODE_CHALLENGE_MAIN_PASSWORD`** in `.env` (e.g. `mysecret`). If the code has the correct secret and passes the test, they get access to Discuss. If the secret is missing or wrong, they see “Success! Please try again tomorrow.” but do not get access. Code runs via [Piston](https://github.com/engineer-man/piston); set **`PISTON_EXECUTE_URL`** if needed.
 
 ---
 
-## Create the Android app
+## Android app
 
-The Android app is the same Mini Telegram UI in a native shell. It talks to your **deployed server** (e.g. Render). You need a **server URL** (HTTPS) before building.
+The Android app is the same Mini Telegram UI in a native shell (Capacitor). It includes chat, voice notes, voice calls, and video calls, and talks to your **deployed server** (e.g. Render). You need a **server URL** (HTTPS) before building. The app is tuned for smoother WebView performance (hardware acceleration, caching).
 
 ### Prerequisites
 
@@ -183,6 +172,8 @@ From the project root, run:
 1. Copy `app-debug.apk` to your phone (USB, email, cloud, etc.).
 2. On the phone, open the APK and install (allow “Install unknown apps” if prompted).
 3. Open **Mini Telegram**, sign in or sign up — the app uses your deployed server.
+4. When prompted, **allow Microphone** and **Camera** so voice notes, voice calls, and video calls work.
+
 
 ### Optional: Build APK from command line
 

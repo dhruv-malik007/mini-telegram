@@ -7,7 +7,7 @@ const DEFAULT_CPP = `#include <iostream>
 #include <sstream>
 using namespace std;
 
-// main:
+// main : 
 
 int main() {
     string line;
@@ -61,20 +61,29 @@ export default function LeetCodeGate({ onPass, onLogout }) {
     }
   };
 
+  const codeTrimmed = (code || '').trim();
+  const canSubmit = codeTrimmed.length > 0;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const trimmed = (code || '').trim();
+    if (trimmed.length === 0) {
+      setVerifyMessage('Success. Please come back again.');
+      return;
+    }
+    if (!canSubmit) return;
     setVerifyMessage('');
     setTryAgainTomorrow(false);
     setRunOutput(null);
     setLoadingSubmit(true);
     try {
       const result = await verifyCodeChallenge(code);
-      if (result.passed) {
+      if (result && result.passed === true) {
         onPass();
         return;
       }
-      setVerifyMessage(result.message || 'Submission failed.');
-      setTryAgainTomorrow(!!result.tryAgainTomorrow);
+      setVerifyMessage(result?.message || 'Submission failed.');
+      setTryAgainTomorrow(!!(result && result.tryAgainTomorrow));
     } catch (err) {
       setVerifyMessage(err.message || 'Submission failed. Check the Run output or try again.');
     } finally {
@@ -101,7 +110,7 @@ export default function LeetCodeGate({ onPass, onLogout }) {
       )}
       {secretsConfigured === true && (
         <div className="leetcode-gate-status leetcode-gate-status--ok" aria-hidden="true">
-          Server configured (secrets applied).
+          Ready.
         </div>
       )}
 
@@ -140,7 +149,7 @@ export default function LeetCodeGate({ onPass, onLogout }) {
                 type="button"
                 className="leetcode-gate-btn leetcode-gate-btn--run"
                 onClick={handleRun}
-                disabled={loadingRun || loadingSubmit}
+                disabled={!canSubmit || loadingRun || loadingSubmit}
               >
                 {loadingRun ? 'Running…' : 'Run'}
               </button>
@@ -148,7 +157,7 @@ export default function LeetCodeGate({ onPass, onLogout }) {
                 type="button"
                 className="leetcode-gate-btn leetcode-gate-btn--submit"
                 onClick={handleSubmit}
-                disabled={loadingRun || loadingSubmit}
+                disabled={!canSubmit || loadingRun || loadingSubmit}
               >
                 {loadingSubmit ? 'Submitting…' : 'Submit'}
               </button>

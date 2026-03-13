@@ -1,8 +1,12 @@
 {
   "appId": "com.minitelegram.app",
-  "appName": "Code Snippets",
+  "appName": "Mini Telegram",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "url": "https://code-snippets-1vw9.onrender.com"
+  },
+  "android": {
+    "allowMixedContent": true
   }
 }

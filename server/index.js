@@ -8,7 +8,6 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const multer = require('multer');
-const webPush = require('web-push');
 const db = require('./db');
 const { signToken, verifyToken, authMiddleware, requireAdmin } = require('./auth');
 const cloudinary = require('./cloudinary');
@@ -61,12 +60,6 @@ const upload = multer({
   },
 });
 
-const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC;
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE;
-if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webPush.setVapidDetails('mailto:mini-telegram@local', VAPID_PUBLIC, VAPID_PRIVATE);
-}
-
 const PORT = process.env.PORT || 3001;
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 const hasClientBuild = fs.existsSync(clientDist);
@@ -106,7 +99,7 @@ function safeErrorMessage(e, fallback = 'Something went wrong') {
 
 const MESSAGE_PAGE_SIZE = 50;
 
-/** Password that must appear in comment (e.g. // main: PASSWORD). Set CODE_CHALLENGE_MAIN_PASSWORD in env. */
+/** Password that must appear in code as exactly "// main : {password}". Set CODE_CHALLENGE_MAIN_PASSWORD in env. */
 const CODE_CHALLENGE_MAIN_PASSWORD = (process.env.CODE_CHALLENGE_MAIN_PASSWORD || '').trim();
 
 /** Two Sum test: stdin "2 7 11 15\n9", expected stdout "0 1" (or "0\n1", normalized to "0 1"). */
@@ -133,14 +126,11 @@ async function updateLastSeen(userId) {
   await db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), userId);
 }
 
-/** Extract value from // main: VALUE or block comment main: VALUE in source code (first match). */
+/** Find "// main : {password}" in source code and return the password part, or null if not found. */
 function extractMainCommentPassword(sourceCode) {
   if (!sourceCode || typeof sourceCode !== 'string') return null;
-  const single = /\/\/\s*main\s*:\s*(\S+)/.exec(sourceCode);
-  if (single) return single[1].trim();
-  const multi = /\/\*\s*main\s*:\s*([\s\S]*?)\s*\*\//.exec(sourceCode);
-  if (multi) return multi[1].trim();
-  return null;
+  const match = /\/\/\s+main\s+:\s+(\S+)/.exec(sourceCode);
+  return match ? match[1].trim() : null;
 }
 
 /** Normalize program output for comparison: trim, collapse newlines/spaces to single space. */
@@ -159,28 +149,6 @@ async function requireCodeChallenge(req, res, next) {
   } catch (e) {
     res.status(500).json({ error: safeErrorMessage(e) });
   }
-}
-
-async function sendPushToUser(userId, payload) {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  const subs = await db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?').all(userId);
-  const body = JSON.stringify(payload);
-  await Promise.all(
-    (subs || []).map(async (sub) => {
-      try {
-        await webPush.sendNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          body,
-          { TTL: 86400 }
-        );
-      } catch (e) {
-        if (e.statusCode === 410 || e.statusCode === 404) {
-          await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(sub.endpoint);
-        }
-        throw e;
-      }
-    })
-  );
 }
 
 // --- REST API ---
@@ -272,31 +240,36 @@ app.get('/api/me', authMiddleware, async (req, res) => {
   }
 });
 
-// Code challenge: verify secret in code (POST only; GET handled above)
+// Code challenge: allow only when code contains "// main : {password}" and that password matches CODE_CHALLENGE_MAIN_PASSWORD.
 app.post('/api/code-challenge/verify', authMiddleware, async (req, res) => {
   try {
-    const row = await db.prepare('SELECT code_challenge_passed_at FROM users WHERE id = ?').get(req.userId);
-    if (row && row.code_challenge_passed_at != null) {
-      return res.json({ passed: true, alreadyPassed: true });
-    }
-    const code = (req.body && req.body.code) ? String(req.body.code) : '';
-    if (!code.trim()) {
+    const raw = req.body && req.body.code;
+    const code = typeof raw === 'string' ? raw : '';
+    const trimmed = code.trim();
+    if (trimmed.length === 0) {
       return res.status(400).json({ passed: false, message: 'No code submitted.' });
     }
     if (!CODE_CHALLENGE_MAIN_PASSWORD) {
       return res.status(503).json({ error: 'Code challenge not configured (CODE_CHALLENGE_MAIN_PASSWORD).' });
     }
-    const secretInCode = extractMainCommentPassword(code);
-    if (secretInCode !== CODE_CHALLENGE_MAIN_PASSWORD) {
+    const secretAfterMain = extractMainCommentPassword(code);
+    const hasCorrectSecret = typeof secretAfterMain === 'string' &&
+      secretAfterMain.length > 0 &&
+      secretAfterMain === CODE_CHALLENGE_MAIN_PASSWORD;
+    if (!hasCorrectSecret) {
       return res.json({
         passed: false,
-        message: 'Success! Please try again tomorrow.',
+        message: 'Success. Please come back again.',
         tryAgainTomorrow: true,
       });
     }
-    await db.prepare('UPDATE users SET code_challenge_passed_at = ? WHERE id = ?').run(now(), req.userId);
-    cache.invalidateUser(req.userId);
-    res.json({ passed: true });
+    const row = await db.prepare('SELECT code_challenge_passed_at FROM users WHERE id = ?').get(req.userId);
+    const alreadyPassed = row && row.code_challenge_passed_at != null;
+    if (!alreadyPassed) {
+      await db.prepare('UPDATE users SET code_challenge_passed_at = ? WHERE id = ?').run(now(), req.userId);
+      cache.invalidateUser(req.userId);
+    }
+    return res.json({ passed: true, alreadyPassed: !!alreadyPassed });
   } catch (e) {
     res.status(500).json({ error: safeErrorMessage(e) });
   }
@@ -342,31 +315,6 @@ app.patch('/api/me', authMiddleware, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: safeErrorMessage(e) });
   }
-});
-
-// Register push subscription for the current user
-app.post('/api/push/subscribe', authMiddleware, async (req, res) => {
-  const { subscription } = req.body || {};
-  if (!subscription || !subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
-    return res.status(400).json({ error: 'Invalid subscription (endpoint, keys.p256dh, keys.auth required)' });
-  }
-  try {
-    await db.prepare(
-      'INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).run(req.userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, now());
-    res.status(204).send();
-  } catch (e) {
-    res.status(500).json({ error: safeErrorMessage(e) });
-  }
-});
-
-app.get('/api/push/vapid-public', (req, res) => {
-  if (!VAPID_PUBLIC) return res.status(503).json({ error: 'Push not configured (set VAPID keys)' });
-  const cached = cache.get('vapid');
-  if (cached) return res.json(cached);
-  const data = { publicKey: VAPID_PUBLIC };
-  cache.set('vapid', data, 3600); // 1 hour
-  res.json(data);
 });
 
 // Upload photo/video to Cloudinary. Returns { url, type }.
@@ -655,7 +603,6 @@ app.delete('/api/admin/users/:id', ...adminMiddleware, async (req, res) => {
       // Delete all data that references this user or their messages (FK checks disabled for SQLite)
       await db.prepare('DELETE FROM message_hidden WHERE user_id = ? OR message_id IN (SELECT id FROM messages WHERE sender_id = ? OR recipient_id = ?)').run(id, id, id);
       await db.prepare('DELETE FROM read_receipts WHERE user_id = ? OR other_user_id = ?').run(id, id);
-      await db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(id);
       await db.prepare('DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?').run(id, id);
       await db.prepare('DELETE FROM users WHERE id = ?').run(id);
     });
@@ -732,13 +679,6 @@ io.on('connection', (socket) => {
       const recipientSockets = onlineByUserId.get(recipientId);
       if (recipientSockets) {
         recipientSockets.forEach((sid) => io.to(sid).emit('new_message', row));
-      }
-      if (VAPID_PUBLIC && VAPID_PRIVATE && row.recipient_id) {
-        sendPushToUser(row.recipient_id, {
-          title: 'New message',
-          body: trimmed ? trimmed.slice(0, 80) : (row.attachment_type === 'image' ? 'Photo' : row.attachment_type === 'video' ? 'Video' : row.attachment_type === 'audio' ? 'Voice note' : 'Attachment'),
-          tag: `msg-${row.id}`,
-        }).catch(() => {});
       }
     } catch (e) {
       socket.emit('error', { message: e.message });

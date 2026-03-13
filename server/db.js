@@ -58,6 +58,14 @@ if (useTurso) {
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS push_fcm_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    created_at INTEGER DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS message_hidden (
     user_id INTEGER NOT NULL,
     message_id INTEGER NOT NULL,
@@ -205,6 +213,14 @@ if (useTurso) {
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS push_fcm_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS message_hidden (
     user_id INTEGER NOT NULL,
     message_id INTEGER NOT NULL,
@@ -243,6 +259,7 @@ if (useTurso) {
     if (!cols.some((c) => c.name === 'attachment_type')) sqlite.exec('ALTER TABLE messages ADD COLUMN attachment_type TEXT');
     if (!cols.some((c) => c.name === 'attachment_url')) sqlite.exec('ALTER TABLE messages ADD COLUMN attachment_url TEXT');
     sqlite.exec('CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER DEFAULT (strftime(\'%s\', \'now\')), FOREIGN KEY (user_id) REFERENCES users(id))');
+    sqlite.exec('CREATE TABLE IF NOT EXISTS push_fcm_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, created_at INTEGER DEFAULT (strftime(\'%s\', \'now\')), FOREIGN KEY (user_id) REFERENCES users(id))');
     sqlite.exec('CREATE TABLE IF NOT EXISTS message_hidden (user_id INTEGER NOT NULL, message_id INTEGER NOT NULL, PRIMARY KEY (user_id, message_id))');
     sqlite.exec('CREATE TABLE IF NOT EXISTS read_receipts (user_id INTEGER NOT NULL, other_user_id INTEGER NOT NULL, last_read_message_id INTEGER NOT NULL DEFAULT 0, read_at INTEGER DEFAULT (strftime(\'%s\', \'now\')), PRIMARY KEY (user_id, other_user_id))');
   } catch (_) {}
