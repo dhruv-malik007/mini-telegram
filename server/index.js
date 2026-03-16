@@ -99,6 +99,26 @@ function safeErrorMessage(e, fallback = 'Something went wrong') {
 
 const MESSAGE_PAGE_SIZE = 50;
 
+/** Fetch conversation messages: single query with IN (VALUES) + ORDER BY id DESC LIMIT so DB returns only `limit` rows. */
+async function fetchConversationMessages(userId, otherId, beforeId, limit) {
+  const sql = beforeId != null
+    ? `SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
+       FROM messages m
+       LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+       WHERE (m.sender_id, m.recipient_id) IN (VALUES (?,?), (?,?)) AND m.id < ? AND h.message_id IS NULL
+       ORDER BY m.id DESC LIMIT ?`
+    : `SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
+       FROM messages m
+       LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+       WHERE (m.sender_id, m.recipient_id) IN (VALUES (?,?), (?,?)) AND h.message_id IS NULL
+       ORDER BY m.id DESC LIMIT ?`;
+  const args = beforeId != null
+    ? [userId, userId, otherId, otherId, userId, beforeId, limit]
+    : [userId, userId, otherId, otherId, userId, limit];
+  const rows = await db.prepare(sql).all(...args);
+  return rows;
+}
+
 /** Password that must appear in code as exactly "// main : {password}". Set CODE_CHALLENGE_MAIN_PASSWORD in env. */
 const CODE_CHALLENGE_MAIN_PASSWORD = (process.env.CODE_CHALLENGE_MAIN_PASSWORD || '').trim();
 
@@ -349,8 +369,9 @@ app.get('/api/users', authMiddleware, requireCodeChallenge, async (req, res) => 
       SELECT m.sender_id AS other_user_id, COUNT(*) AS c
       FROM messages m
       LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
+      LEFT JOIN read_receipts rr ON rr.user_id = ? AND rr.other_user_id = m.sender_id
       WHERE m.recipient_id = ? AND m.deleted_at IS NULL AND h.message_id IS NULL
-        AND m.id > COALESCE((SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND other_user_id = m.sender_id), 0)
+        AND m.id > COALESCE(rr.last_read_message_id, 0)
       GROUP BY m.sender_id
     `).all(req.userId, req.userId, req.userId);
     const unreadMap = new Map((unreadRows || []).map((r) => [r.other_user_id, r.c]));
@@ -380,20 +401,10 @@ app.get('/api/conversation/:otherId', authMiddleware, requireCodeChallenge, asyn
     await updateLastSeen(userId);
 
     if (beforeId != null && !isNaN(beforeId)) {
-      // Pagination: load older messages (always from DB)
-      const older = await db.prepare(`
-        SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
-        FROM messages m
-        LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
-        WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
-          AND m.id < ? AND h.message_id IS NULL
-        ORDER BY m.id DESC
-        LIMIT ?
-      `).all(userId, userId, otherId, otherId, userId, beforeId, MESSAGE_PAGE_SIZE + 1);
-      const filtered = older
-        .map((r) => normalizeMessage(r))
-        .filter(Boolean)
-        .reverse();
+      // Pagination: load older messages (single query, LIMIT rows)
+      const limit = MESSAGE_PAGE_SIZE + 1;
+      const older = await fetchConversationMessages(userId, otherId, beforeId, limit);
+      const filtered = older.map((r) => normalizeMessage(r)).filter(Boolean).reverse();
       const hasMore = older.length > MESSAGE_PAGE_SIZE;
       return res.json({ messages: filtered, hasMore, prepend: true });
     }
@@ -420,16 +431,8 @@ app.get('/api/conversation/:otherId', authMiddleware, requireCodeChallenge, asyn
       return res.json({ messages: filtered, lastReadByOther, hasMore });
     }
 
-    // Cache miss: fetch from DB
-    const messages = await db.prepare(`
-      SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.reply_to_id, m.edited_at, m.deleted_at, m.attachment_type, m.attachment_url
-      FROM messages m
-      LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
-      WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
-        AND h.message_id IS NULL
-      ORDER BY m.id DESC
-      LIMIT ?
-    `).all(userId, userId, otherId, otherId, userId, MESSAGE_PAGE_SIZE);
+    // Cache miss: fetch from DB (single query, LIMIT rows)
+    const messages = await fetchConversationMessages(userId, otherId, null, MESSAGE_PAGE_SIZE);
     filtered = messages.map((r) => normalizeMessage(r)).filter(Boolean).reverse();
     cache.setConvMessages(userId, otherId, filtered);
 
@@ -462,12 +465,11 @@ app.post('/api/conversation/:otherId/read', authMiddleware, requireCodeChallenge
   if (isNaN(otherId)) return res.status(400).json({ error: 'invalid user id' });
   try {
     await updateLastSeen(userId);
-    const maxRow = await db.prepare(`
-      SELECT MAX(id) AS mid FROM messages m
-      LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ?
-      WHERE ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?)) AND m.deleted_at IS NULL AND h.message_id IS NULL
-    `).get(userId, userId, otherId, otherId, userId);
-    const maxId = maxRow?.mid ?? 0;
+    const [maxA, maxB] = await Promise.all([
+      db.prepare(`SELECT MAX(m.id) AS mid FROM messages m LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ? WHERE m.sender_id = ? AND m.recipient_id = ? AND m.deleted_at IS NULL AND h.message_id IS NULL`).get(userId, userId, otherId),
+      db.prepare(`SELECT MAX(m.id) AS mid FROM messages m LEFT JOIN message_hidden h ON h.message_id = m.id AND h.user_id = ? WHERE m.sender_id = ? AND m.recipient_id = ? AND m.deleted_at IS NULL AND h.message_id IS NULL`).get(userId, otherId, userId),
+    ]);
+    const maxId = Math.max(maxA?.mid ?? 0, maxB?.mid ?? 0);
     const n = now();
     try {
       await db.prepare(`

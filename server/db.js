@@ -85,7 +85,10 @@ if (useTurso) {
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(sender_id, recipient_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_conv_id ON messages(sender_id, recipient_id, id);
+  CREATE INDEX IF NOT EXISTS idx_messages_recipient_sender_id ON messages(recipient_id, sender_id, id);
   CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+  CREATE INDEX IF NOT EXISTS idx_message_hidden_message_user ON message_hidden(message_id, user_id);
   `;
 
   async function initTurso() {
@@ -240,7 +243,10 @@ if (useTurso) {
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(sender_id, recipient_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_conv_id ON messages(sender_id, recipient_id, id);
+  CREATE INDEX IF NOT EXISTS idx_messages_recipient_sender_id ON messages(recipient_id, sender_id, id);
   CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+  CREATE INDEX IF NOT EXISTS idx_message_hidden_message_user ON message_hidden(message_id, user_id);
   `);
 
   try {
